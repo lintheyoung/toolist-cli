@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 import { imageConvertCommand } from './commands/image/convert.js';
+import { imageCropCommand } from './commands/image/crop.js';
+import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { uploadCommand } from './commands/files/upload.js';
@@ -32,6 +34,42 @@ function unexpectedPositional(arg: string): never {
 
 function missingOptionValue(flag: string): never {
   throw new Error(`Missing value for option: ${flag}`);
+}
+
+function parseOption(arg: string, args: string[], index: number): {
+  flag: string;
+  value?: string;
+  rawValue?: string;
+  consumeNext: boolean;
+} {
+  const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
+  const nextArg = inlineValue === undefined ? args[index + 1] : undefined;
+  const consumeNext = inlineValue === undefined && nextArg !== undefined && !nextArg.startsWith('-');
+  const rawValue = inlineValue ?? (consumeNext ? nextArg : undefined);
+  const value = rawValue && !rawValue.startsWith('-') ? rawValue : undefined;
+
+  return {
+    flag,
+    value,
+    rawValue,
+    consumeNext,
+  };
+}
+
+function isExplicitEmptyOption(rawValue: string | undefined): boolean {
+  return rawValue === '';
+}
+
+function isIntegerInRange(value: number, minimum: number, maximum?: number): boolean {
+  if (!Number.isInteger(value) || value < minimum) {
+    return false;
+  }
+
+  if (maximum !== undefined && value > maximum) {
+    return false;
+  }
+
+  return true;
 }
 
 export function getRootHelp(): string {
@@ -87,9 +125,13 @@ export function getImageHelp(): string {
     '',
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
+    '  resize   Resize an image through the API',
+    '  crop     Crop an image through the API',
   ].join('\n') + '\n';
 }
 
@@ -125,16 +167,14 @@ function parseLoginArgs(args: string[]): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--base-url') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -145,7 +185,7 @@ function parseLoginArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.clientName = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -156,7 +196,7 @@ function parseLoginArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -190,16 +230,14 @@ function parseConfigPathArgs(args: string[]): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--config-path') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -237,27 +275,27 @@ function parseApiArgs(args: string[], strict = false): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--base-url') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--token') {
-      if (!value) {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
         missingOptionValue(flag);
       }
-      parsed.token = value;
-      if (!inlineValue) {
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -268,7 +306,7 @@ function parseApiArgs(args: string[], strict = false): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -310,27 +348,27 @@ function parseUploadArgs(args: string[]): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--base-url') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--token') {
-      if (!value) {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
         missingOptionValue(flag);
       }
-      parsed.token = value;
-      if (!inlineValue) {
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -341,7 +379,7 @@ function parseUploadArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -352,7 +390,7 @@ function parseUploadArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.input = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -404,27 +442,27 @@ function parseImageConvertArgs(args: string[]): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--base-url') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--token') {
-      if (!value) {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
         missingOptionValue(flag);
       }
-      parsed.token = value;
-      if (!inlineValue) {
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -435,7 +473,7 @@ function parseImageConvertArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -443,7 +481,7 @@ function parseImageConvertArgs(args: string[]): {
 
     if (flag === '--input' && value) {
       parsed.input = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -451,21 +489,21 @@ function parseImageConvertArgs(args: string[]): {
 
     if (flag === '--to' && value) {
       parsed.to = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--quality') {
-      const qualityValue = Number(value ?? nextValue);
+      const qualityValue = Number(value ?? rawValue);
 
       if (!Number.isFinite(qualityValue)) {
         throw new Error('Invalid value for --quality.');
       }
 
       parsed.quality = qualityValue;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -477,14 +515,14 @@ function parseImageConvertArgs(args: string[]): {
     }
 
     if (flag === '--timeout') {
-      const timeoutValue = Number(value ?? nextValue);
+      const timeoutValue = Number(value ?? rawValue);
 
       if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
         throw new Error('Invalid value for --timeout.');
       }
 
       parsed.timeoutSeconds = timeoutValue;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -492,7 +530,383 @@ function parseImageConvertArgs(args: string[]): {
 
     if (flag === '--output' && value) {
       parsed.output = value;
-      if (!inlineValue) {
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageResizeArgs(args: string[]): {
+  input?: string;
+  width?: number;
+  height?: number;
+  to?: string;
+  quality?: number;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    input?: string;
+    width?: number;
+    height?: number;
+    to?: string;
+    quality?: number;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--input' && value) {
+      parsed.input = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--width') {
+      const widthValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(widthValue, 1)) {
+        throw new Error('Invalid value for --width.');
+      }
+
+      parsed.width = widthValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--height') {
+      const heightValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(heightValue, 1)) {
+        throw new Error('Invalid value for --height.');
+      }
+
+      parsed.height = heightValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to' && value) {
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--quality') {
+      const qualityValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(qualityValue, 1, 100)) {
+        throw new Error('Invalid value for --quality.');
+      }
+
+      parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output' && value) {
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageCropArgs(args: string[]): {
+  input?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  to?: string;
+  quality?: number;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    input?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    to?: string;
+    quality?: number;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--input' && value) {
+      parsed.input = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--x') {
+      const xValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(xValue, 0)) {
+        throw new Error('Invalid value for --x.');
+      }
+
+      parsed.x = xValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--y') {
+      const yValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(yValue, 0)) {
+        throw new Error('Invalid value for --y.');
+      }
+
+      parsed.y = yValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--width') {
+      const widthValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(widthValue, 1)) {
+        throw new Error('Invalid value for --width.');
+      }
+
+      parsed.width = widthValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--height') {
+      const heightValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(heightValue, 1)) {
+        throw new Error('Invalid value for --height.');
+      }
+
+      parsed.height = heightValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to' && value) {
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--quality') {
+      const qualityValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(qualityValue, 1, 100)) {
+        throw new Error('Invalid value for --quality.');
+      }
+
+      parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output' && value) {
+      parsed.output = value;
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -534,27 +948,27 @@ function parseJobArgs(args: string[]): {
       continue;
     }
 
-    const [flag, inlineValue] = arg.startsWith('--') ? arg.split('=', 2) : [arg, undefined];
-    const nextValue = inlineValue ?? args[index + 1];
-    const value = nextValue && !nextValue.startsWith('-') ? nextValue : undefined;
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
 
     if (flag === '--base-url') {
       if (!value) {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--token') {
-      if (!value) {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
         missingOptionValue(flag);
       }
-      parsed.token = value;
-      if (!inlineValue) {
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -565,21 +979,21 @@ function parseJobArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
     }
 
     if (flag === '--timeout') {
-      const timeoutValue = Number(value ?? nextValue);
+      const timeoutValue = Number(value ?? rawValue);
 
       if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
         throw new Error('Invalid value for --timeout.');
       }
 
       parsed.timeoutSeconds = timeoutValue;
-      if (!inlineValue) {
+      if (consumeNext) {
         index += 1;
       }
       continue;
@@ -622,11 +1036,11 @@ async function resolveApiCredentials(args: {
   const config = await loadConfig(args.configPath);
 
   if (!config?.baseUrl && !args.baseUrl) {
-    throw new Error('Missing required option: --base-url or saved config.');
+    throw new Error('Missing API base URL. Pass --base-url or use a saved login.');
   }
 
   if (!config?.accessToken && !args.token) {
-    throw new Error('Missing required option: --token or saved login.');
+    throw new Error('Missing authentication. Pass --token or use a saved login.');
   }
 
   return {
@@ -787,6 +1201,93 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image convert failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'resize') {
+      try {
+        const parsed = parseImageResizeArgs(commandArgs);
+
+        if (!parsed.input) {
+          io.stderr('Missing required option: --input\n');
+          return 1;
+        }
+
+        if (parsed.width === undefined && parsed.height === undefined) {
+          io.stderr('Missing required option: --width or --height\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageResizeCommand({
+          input: parsed.input,
+          width: parsed.width,
+          height: parsed.height,
+          to: parsed.to,
+          quality: parsed.quality,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image resize failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'crop') {
+      try {
+        const parsed = parseImageCropArgs(commandArgs);
+
+        if (!parsed.input) {
+          io.stderr('Missing required option: --input\n');
+          return 1;
+        }
+
+        if (parsed.x === undefined) {
+          io.stderr('Missing required option: --x\n');
+          return 1;
+        }
+
+        if (parsed.y === undefined) {
+          io.stderr('Missing required option: --y\n');
+          return 1;
+        }
+
+        if (parsed.width === undefined) {
+          io.stderr('Missing required option: --width\n');
+          return 1;
+        }
+
+        if (parsed.height === undefined) {
+          io.stderr('Missing required option: --height\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageCropCommand({
+          input: parsed.input,
+          x: parsed.x,
+          y: parsed.y,
+          width: parsed.width,
+          height: parsed.height,
+          to: parsed.to,
+          quality: parsed.quality,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image crop failed.'}\n`);
         return 1;
       }
     }

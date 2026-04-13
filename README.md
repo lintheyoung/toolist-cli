@@ -25,6 +25,9 @@ Authenticate with the platform:
 npx toollist@latest login --base-url https://api.example.com
 ```
 
+After logging in, commands reuse the saved login automatically. You only need
+`--token` when you want to override the saved credentials explicitly.
+
 Inspect your current identity:
 
 ```bash
@@ -35,6 +38,18 @@ Run a high-level image conversion:
 
 ```bash
 npx toollist@latest image convert --input ./photo.jpg --to webp --wait
+```
+
+Resize an image and write the derived artifact locally:
+
+```bash
+npx toollist@latest image resize --input ./photo.jpg --width 1200 --to webp --wait --output ./photo-1200.webp
+```
+
+Crop an image to a bounding box and download the result:
+
+```bash
+npx toollist@latest image crop --input ./photo.jpg --x 120 --y 80 --width 640 --height 480 --to png --wait --output ./photo-crop.png
 ```
 
 ## Development
