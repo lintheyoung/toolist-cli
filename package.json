@@ -4,6 +4,14 @@
   "description": "Agent-first CLI for Toollist platform APIs.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lintheyoung/toollist.git"
+  },
+  "homepage": "https://github.com/lintheyoung/toollist#readme",
+  "bugs": {
+    "url": "https://github.com/lintheyoung/toollist/issues"
+  },
   "bin": {
     "toollist": "./dist/cli.js"
   },
