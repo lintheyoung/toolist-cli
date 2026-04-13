@@ -12,9 +12,7 @@
   "bugs": {
     "url": "https://github.com/lintheyoung/toollist/issues"
   },
-  "bin": {
-    "toollist": "./dist/cli.js"
-  },
+  "bin": "./dist/cli.js",
   "files": [
     "dist",
     "README.md"
