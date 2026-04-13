@@ -1,0 +1,118 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.resetModules();
+  vi.doUnmock('../../src/commands/whoami.js');
+});
+
+describe('whoami command', () => {
+  it('dispatches whoami through the CLI and prints the JSON result', async () => {
+    const whoamiCommand = vi.fn(async () => ({
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      scopes: ['workspace:read', 'tools:read'],
+      active_job_count: 2,
+      max_concurrent_jobs: 5,
+    }));
+
+    vi.doMock('../../src/commands/whoami.js', () => ({
+      whoamiCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+
+    const exitCode = await main(['whoami', '--config-path', '/tmp/toollist-config.json', '--json'], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(whoamiCommand).toHaveBeenCalledWith({
+      configPath: '/tmp/toollist-config.json',
+    });
+    expect(JSON.parse(stdout)).toEqual({
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      scopes: ['workspace:read', 'tools:read'],
+      active_job_count: 2,
+      max_concurrent_jobs: 5,
+    });
+    expect(stderr).toBe('');
+  });
+
+  it('reads the saved config and fetches the current identity', async () => {
+    const { whoamiCommand } = await import('../../src/commands/whoami.js');
+
+    const loadConfig = vi.fn(async () => ({
+      baseUrl: 'https://api.example.com',
+      accessToken: 'tgc_cli_secret',
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        user: {
+          id: 11,
+          email: 'agent@example.com',
+        },
+        workspace: {
+          id: 77,
+          name: 'Acme',
+        },
+        scopes: ['workspace:read', 'tools:read'],
+        active_job_count: 2,
+        max_concurrent_jobs: 5,
+      },
+      request_id: 'req_whoami_123',
+    }));
+
+    const result = await whoamiCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        loadConfig,
+        apiRequest,
+      },
+    );
+
+    expect(loadConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      method: 'GET',
+      path: '/api/cli/me',
+    });
+    expect(result).toEqual({
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      scopes: ['workspace:read', 'tools:read'],
+      active_job_count: 2,
+      max_concurrent_jobs: 5,
+    });
+  });
+});

@@ -1,0 +1,28 @@
+{
+  "name": "toollist",
+  "version": "0.1.0",
+  "description": "Agent-first CLI for Toollist platform APIs.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "toollist": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc --noEmit",
+    "prepack": "npm run build",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.4"
+  }
+}
