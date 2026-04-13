@@ -11,6 +11,7 @@ export interface ImageResizeCommandArgs {
   height?: number;
   to?: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -181,6 +182,7 @@ export async function imageResizeCommand(
     path: '/api/v1/jobs',
     body: {
       tool_name: 'image.resize',
+      ...(args.sync ? { execution_mode: 'sync' as const } : {}),
       idempotency_key: deps.randomUUID(),
       input,
     },

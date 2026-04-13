@@ -13,6 +13,7 @@ export interface ImageCropCommandArgs {
   height: number;
   to?: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -179,6 +180,7 @@ export async function imageCropCommand(
     path: '/api/v1/jobs',
     body: {
       tool_name: 'image.crop',
+      ...(args.sync ? { execution_mode: 'sync' as const } : {}),
       idempotency_key: deps.randomUUID(),
       input,
     },

@@ -124,9 +124,9 @@ export function getImageHelp(): string {
     'toollist image',
     '',
     'Usage:',
-    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
-    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
-    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
@@ -414,6 +414,7 @@ function parseImageConvertArgs(args: string[]): {
   input?: string;
   to?: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -425,6 +426,7 @@ function parseImageConvertArgs(args: string[]): {
     input?: string;
     to?: string;
     quality?: number;
+    sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -514,6 +516,11 @@ function parseImageConvertArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--sync') {
+      parsed.sync = true;
+      continue;
+    }
+
     if (flag === '--timeout') {
       const timeoutValue = Number(value ?? rawValue);
 
@@ -556,6 +563,7 @@ function parseImageResizeArgs(args: string[]): {
   height?: number;
   to?: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -569,6 +577,7 @@ function parseImageResizeArgs(args: string[]): {
     height?: number;
     to?: string;
     quality?: number;
+    sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -686,6 +695,11 @@ function parseImageResizeArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--sync') {
+      parsed.sync = true;
+      continue;
+    }
+
     if (flag === '--timeout') {
       const timeoutValue = Number(value ?? rawValue);
 
@@ -730,6 +744,7 @@ function parseImageCropArgs(args: string[]): {
   height?: number;
   to?: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -745,6 +760,7 @@ function parseImageCropArgs(args: string[]): {
     height?: number;
     to?: string;
     quality?: number;
+    sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -887,6 +903,11 @@ function parseImageCropArgs(args: string[]): {
 
     if (flag === '--wait') {
       parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--sync') {
+      parsed.sync = true;
       continue;
     }
 
@@ -1191,6 +1212,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           input: parsed.input,
           to: parsed.to,
           quality: parsed.quality,
+          sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
@@ -1226,6 +1248,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           height: parsed.height,
           to: parsed.to,
           quality: parsed.quality,
+          sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
@@ -1278,6 +1301,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           height: parsed.height,
           to: parsed.to,
           quality: parsed.quality,
+          sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,

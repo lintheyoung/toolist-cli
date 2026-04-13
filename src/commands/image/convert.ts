@@ -9,6 +9,7 @@ export interface ImageConvertCommandArgs {
   input: string;
   to: string;
   quality?: number;
+  sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -169,6 +170,7 @@ export async function imageConvertCommand(
     path: '/api/v1/jobs',
     body: {
       tool_name: 'image.convert_format',
+      ...(args.sync ? { execution_mode: 'sync' as const } : {}),
       idempotency_key: deps.randomUUID(),
       input,
     },

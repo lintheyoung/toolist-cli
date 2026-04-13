@@ -27,6 +27,83 @@ async function runCli(args: string[]) {
 }
 
 describe('image crop command', () => {
+  it('forwards execution_mode sync when --sync is provided', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_crop_123',
+          status: 'queued',
+          toolName: 'image.crop',
+          toolVersion: '2026-04-13',
+        },
+      },
+      request_id: 'req_create_job_crop_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'crop',
+      '--input',
+      '/tmp/photo.jpg',
+      '--x',
+      '10',
+      '--y',
+      '20',
+      '--width',
+      '320',
+      '--height',
+      '240',
+      '--sync',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: expect.objectContaining({
+        tool_name: 'image.crop',
+        execution_mode: 'sync',
+        input: {
+          input_file_id: 'file_source_123',
+          x: 10,
+          y: 20,
+          width: 320,
+          height: 240,
+        },
+      }),
+    });
+    expect(result.stderr).toBe('');
+  });
+
   it('dispatches image crop through the CLI, waits for completion, downloads the output, and prints the final job payload', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo-cropped.png');

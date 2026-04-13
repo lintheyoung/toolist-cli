@@ -28,6 +28,74 @@ async function runCli(args: string[]) {
 }
 
 describe('image convert command', () => {
+  it('forwards execution_mode sync when --sync is provided', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_123',
+          status: 'queued',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/photo.jpg',
+      '--to',
+      'webp',
+      '--sync',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: expect.objectContaining({
+        tool_name: 'image.convert_format',
+        execution_mode: 'sync',
+        input: {
+          input_file_id: 'file_source_123',
+          target_mime_type: 'image/webp',
+        },
+      }),
+    });
+    expect(result.stderr).toBe('');
+  });
+
   it('dispatches image convert through the CLI, waits for completion, downloads the output, and prints the final job payload', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo.webp');
@@ -171,6 +239,96 @@ describe('image convert command', () => {
           storageKey: 'ws/77/output/job_123/output.webp',
         },
       },
+    });
+    expect(result.stderr).toBe('');
+  });
+
+  it('uses saved credentials when --config-path is provided without --token', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_123',
+          status: 'queued',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/http.js')>();
+      return {
+        ...actual,
+        apiRequest,
+      };
+    });
+    vi.doMock('../../src/lib/config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/config.js')>();
+      return {
+        ...actual,
+        loadConfig: vi.fn(async () => ({
+          baseUrl: 'https://saved.example.com',
+          accessToken: 'saved_token_123',
+        })),
+      };
+    });
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/photo.jpg',
+      '--to',
+      'webp',
+      '--config-path',
+      '/tmp/toollist-config.json',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(uploadCommand).toHaveBeenCalledWith({
+      input: '/tmp/photo.jpg',
+      baseUrl: 'https://saved.example.com',
+      token: 'saved_token_123',
+      configPath: '/tmp/toollist-config.json',
+    });
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://saved.example.com',
+      token: 'saved_token_123',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: expect.objectContaining({
+        tool_name: 'image.convert_format',
+        input: {
+          input_file_id: 'file_source_123',
+          target_mime_type: 'image/webp',
+        },
+      }),
+    });
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
     });
     expect(result.stderr).toBe('');
   });
