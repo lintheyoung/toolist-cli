@@ -1,0 +1,153 @@
+import { glob } from 'node:fs/promises';
+
+import { runBatchCommand, type BatchRunResult } from '../batch/run.js';
+import type { BatchManifest, BatchManifestDefaults } from '../../lib/batch-manifest.js';
+import { buildHomogeneousImageBatchManifest } from './homogeneous-batch-manifest.js';
+import { assertSupportedConvertInputPath } from './convert-input-policy.js';
+
+export interface ImageConvertBatchCommandArgs {
+  inputs?: string[];
+  inputGlob?: string;
+  to?: string;
+  quality?: number;
+  concurrency?: number;
+  wait?: boolean;
+  outputDir?: string;
+  resume?: boolean;
+  baseUrl: string;
+  token: string;
+  configPath?: string;
+}
+
+export interface ConvertBatchManifestArgs {
+  inputs?: string[];
+  inputGlob?: string;
+  to?: string;
+  quality?: number;
+  concurrency?: number;
+  wait?: boolean;
+  outputDir?: string;
+  baseUrl?: string;
+}
+
+export interface ImageConvertBatchDependencies {
+  glob: typeof glob;
+  runBatchCommand: typeof runBatchCommand;
+  assertSupportedConvertInputPath: typeof assertSupportedConvertInputPath;
+}
+
+const TARGET_MIME_TYPES: Record<string, string> = {
+  avif: 'image/avif',
+  gif: 'image/gif',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
+
+function createDefaultDependencies(): ImageConvertBatchDependencies {
+  return {
+    glob,
+    runBatchCommand,
+    assertSupportedConvertInputPath,
+  };
+}
+
+function normalizeTargetMimeType(value: string): string {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) {
+    throw new Error('Missing required option: --to');
+  }
+
+  if (normalized.includes('/')) {
+    return normalized;
+  }
+
+  const mimeType = TARGET_MIME_TYPES[normalized];
+
+  if (!mimeType) {
+    throw new Error(`Unsupported output format: ${value}`);
+  }
+
+  return mimeType;
+}
+
+export async function buildConvertBatchManifest(
+  args: ConvertBatchManifestArgs,
+  dependencies: Partial<
+    Pick<ImageConvertBatchDependencies, 'glob' | 'assertSupportedConvertInputPath'>
+  > = {},
+): Promise<BatchManifest> {
+  const deps = {
+    glob,
+    assertSupportedConvertInputPath,
+    ...dependencies,
+  };
+
+  if (!args.to) {
+    throw new Error('Missing required option: --to');
+  }
+
+  const targetMimeType = normalizeTargetMimeType(args.to);
+  const defaults: BatchManifestDefaults = {
+    ...(args.baseUrl ? { base_url: args.baseUrl } : {}),
+    ...(args.concurrency !== undefined ? { concurrency: args.concurrency } : {}),
+    ...(args.wait || args.outputDir ? { wait: true } : {}),
+    ...(args.outputDir
+      ? {
+          download_outputs: true,
+          output_dir: args.outputDir,
+        }
+      : {}),
+  };
+
+  return buildHomogeneousImageBatchManifest(
+    {
+      inputs: args.inputs,
+      inputGlob: args.inputGlob,
+      defaults: Object.keys(defaults).length > 0 ? defaults : undefined,
+      toolName: 'image.convert_format',
+      idPrefix: 'convert',
+      buildInput: async (inputPath) => {
+        await deps.assertSupportedConvertInputPath(inputPath);
+        return {
+          ...(targetMimeType ? { target_mime_type: targetMimeType } : {}),
+          ...(args.quality !== undefined ? { quality: args.quality } : {}),
+        };
+      },
+    },
+    {
+      glob: deps.glob,
+    },
+  );
+}
+
+export async function imageConvertBatchCommand(
+  args: ImageConvertBatchCommandArgs,
+  dependencies: Partial<ImageConvertBatchDependencies> = {},
+): Promise<BatchRunResult> {
+  const deps = {
+    ...createDefaultDependencies(),
+    ...dependencies,
+  };
+
+  const manifest = await buildConvertBatchManifest(args, {
+    glob: deps.glob,
+  });
+
+  return deps.runBatchCommand(
+    {
+      manifestPath: '<image-convert-batch>',
+      resume: args.resume ?? false,
+      concurrency: args.concurrency,
+      outputDir: args.outputDir,
+      baseUrl: args.baseUrl,
+      token: args.token,
+      configPath: args.configPath,
+    },
+    {
+      readBatchManifest: async () => manifest,
+    },
+  );
+}

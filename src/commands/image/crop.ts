@@ -42,6 +42,15 @@ export interface ImageCropJobResult {
   [key: string]: unknown;
 }
 
+function isTerminalJobStatus(status: string): boolean {
+  return (
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'canceled' ||
+    status === 'timed_out'
+  );
+}
+
 function getOutputFileId(job: ImageCropJobResult): string | null {
   if (!job.result || typeof job.result !== 'object') {
     return null;
@@ -192,13 +201,15 @@ export async function imageCropCommand(
     return createJobResponse.data.job;
   }
 
-  const job = await deps.waitJobCommand({
-    jobId: createJobResponse.data.job.id,
-    baseUrl: args.baseUrl,
-    token: args.token,
-    timeoutSeconds: args.timeoutSeconds ?? 60,
-    configPath: args.configPath,
-  });
+  const job = isTerminalJobStatus(createJobResponse.data.job.status)
+    ? createJobResponse.data.job
+    : await deps.waitJobCommand({
+        jobId: createJobResponse.data.job.id,
+        baseUrl: args.baseUrl,
+        token: args.token,
+        timeoutSeconds: args.timeoutSeconds ?? 60,
+        configPath: args.configPath,
+      });
 
   if (args.output) {
     const outputFileId = getOutputFileId(job);

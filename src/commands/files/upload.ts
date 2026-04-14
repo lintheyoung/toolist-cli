@@ -9,6 +9,7 @@ export interface UploadFileCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  computeSha256?: boolean;
 }
 
 export interface UploadFileCommandResult {
@@ -84,7 +85,9 @@ export async function uploadCommand(
   const mimeType = inferMimeType(filename);
   const fileStats = await deps.stat(args.input);
   const fileBuffer = await deps.readFile(args.input);
-  const sha256 = createHash('sha256').update(fileBuffer).digest('hex');
+  const sha256 = args.computeSha256
+    ? createHash('sha256').update(fileBuffer).digest('hex')
+    : undefined;
 
   const createUploadResponse = await deps.apiRequest<CreateUploadResponse>({
     baseUrl: args.baseUrl,
@@ -118,9 +121,7 @@ export async function uploadCommand(
     token: args.token,
     method: 'POST',
     path: `/api/v1/files/${encodeURIComponent(createUploadResponse.data.file_id)}/complete`,
-    body: {
-      sha256,
-    },
+    ...(sha256 ? { body: { sha256 } } : {}),
   });
 
   return {

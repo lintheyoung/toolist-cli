@@ -114,6 +114,45 @@ describe('tools list command', () => {
       ],
     });
   });
+
+  it('uses saved credentials when only --config-path is provided', async () => {
+    const listToolsCommand = vi.fn(async () => ({
+      tools: [],
+    }));
+
+    vi.doMock('../../src/commands/tools/list.js', () => ({
+      listToolsCommand,
+    }));
+    vi.doMock('../../src/lib/config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/config.js')>();
+      return {
+        ...actual,
+        loadConfig: vi.fn(async () => ({
+          baseUrl: 'https://saved.example.com',
+          accessToken: 'saved_token_123',
+        })),
+      };
+    });
+
+    const result = await runCli([
+      'tools',
+      'list',
+      '--config-path',
+      '/tmp/toollist-config.json',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(listToolsCommand).toHaveBeenCalledWith({
+      baseUrl: 'https://saved.example.com',
+      token: 'saved_token_123',
+      configPath: '/tmp/toollist-config.json',
+    });
+    expect(JSON.parse(result.stdout)).toEqual({
+      tools: [],
+    });
+    expect(result.stderr).toBe('');
+  });
 });
 
 describe('jobs commands', () => {
@@ -235,6 +274,55 @@ describe('jobs commands', () => {
       toolName: 'image.convert_format',
       toolVersion: '2026-04-12',
     });
+  });
+
+  it('falls back to the saved token when --token is provided as an empty string', async () => {
+    const getJobCommand = vi.fn(async () => ({
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    }));
+
+    vi.doMock('../../src/commands/jobs/get.js', () => ({
+      getJobCommand,
+    }));
+    vi.doMock('../../src/lib/config.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/config.js')>();
+      return {
+        ...actual,
+        loadConfig: vi.fn(async () => ({
+          baseUrl: 'https://saved.example.com',
+          accessToken: 'saved_token_123',
+        })),
+      };
+    });
+
+    const result = await runCli([
+      'jobs',
+      'get',
+      'job_123',
+      '--config-path',
+      '/tmp/toollist-config.json',
+      '--token',
+      '',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(getJobCommand).toHaveBeenCalledWith({
+      jobId: 'job_123',
+      baseUrl: 'https://saved.example.com',
+      token: 'saved_token_123',
+      configPath: '/tmp/toollist-config.json',
+    });
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    });
+    expect(result.stderr).toBe('');
   });
 
   it('waits until a job reaches a terminal state', async () => {

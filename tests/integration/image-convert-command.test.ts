@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -8,6 +8,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock('../../src/commands/image/convert.js');
+  vi.doUnmock('../../src/commands/image/convert-input-policy.js');
 });
 
 async function runCli(args: string[]) {
@@ -26,6 +27,11 @@ async function runCli(args: string[]) {
 
   return { exitCode, stdout, stderr };
 }
+
+const UNSUPPORTED_TINY_GRAYSCALE_ALPHA_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9mQAAAAASUVORK5CYII=',
+  'base64',
+);
 
 describe('image convert command', () => {
   it('forwards execution_mode sync when --sync is provided', async () => {
@@ -58,6 +64,9 @@ describe('image convert command', () => {
 
     vi.doMock('../../src/commands/files/upload.js', () => ({
       uploadCommand,
+    }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
     }));
     vi.doMock('../../src/lib/http.js', () => ({
       apiRequest,
@@ -158,6 +167,9 @@ describe('image convert command', () => {
     vi.doMock('../../src/commands/files/upload.js', () => ({
       uploadCommand,
     }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
     vi.doMock('../../src/commands/jobs/wait.js', () => ({
       waitJobCommand,
     }));
@@ -243,6 +255,123 @@ describe('image convert command', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('skips jobs wait when a sync create response is already terminal', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const outputPath = join(tempDir, 'photo-sync.webp');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => {
+      throw new Error('wait should not be called');
+    });
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_sync_123',
+          status: 'succeeded',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+          input: {
+            input_file_id: 'file_source_123',
+            target_mime_type: 'image/webp',
+          },
+          result: {
+            output: {
+              outputFileId: 'file_output_123',
+              mimeType: 'image/webp',
+              storageKey: 'ws/77/output/job_sync_123/output.webp',
+            },
+          },
+        },
+      },
+      request_id: 'req_create_job_sync_123',
+    }));
+
+    const downloadResponse = new Response(Buffer.from('sync webp bytes'), {
+      status: 200,
+      headers: {
+        'content-type': 'image/webp',
+      },
+    });
+    const fetch = vi.fn(async () => downloadResponse);
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/photo.jpg',
+      '--to',
+      'webp',
+      '--sync',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(waitJobCommand).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/v1/files/file_output_123/download',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: 'Bearer tgc_cli_secret',
+        }),
+      }),
+    );
+    expect(await readFile(outputPath)).toEqual(Buffer.from('sync webp bytes'));
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: 'job_sync_123',
+      status: 'succeeded',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+      input: {
+        input_file_id: 'file_source_123',
+        target_mime_type: 'image/webp',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/webp',
+          storageKey: 'ws/77/output/job_sync_123/output.webp',
+        },
+      },
+    });
+    expect(result.stderr).toBe('');
+  });
+
   it('uses saved credentials when --config-path is provided without --token', async () => {
     const uploadCommand = vi.fn(async () => ({
       file_id: 'file_source_123',
@@ -273,6 +402,9 @@ describe('image convert command', () => {
 
     vi.doMock('../../src/commands/files/upload.js', () => ({
       uploadCommand,
+    }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
     }));
     vi.doMock('../../src/lib/http.js', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../../src/lib/http.js')>();
@@ -331,5 +463,41 @@ describe('image convert command', () => {
       toolVersion: '2026-04-12',
     });
     expect(result.stderr).toBe('');
+  });
+
+  it('fails early for the known unsupported tiny grayscale+alpha PNG input', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const inputPath = join(tempDir, 'tiny-ga.png');
+    await writeFile(inputPath, UNSUPPORTED_TINY_GRAYSCALE_ALPHA_PNG);
+
+    const uploadCommand = vi.fn();
+    const apiRequest = vi.fn();
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      inputPath,
+      '--to',
+      'webp',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/unsupported/i);
+    expect(result.stderr).toMatch(/grayscale\+alpha png/i);
+    expect(uploadCommand).not.toHaveBeenCalled();
+    expect(apiRequest).not.toHaveBeenCalled();
   });
 });

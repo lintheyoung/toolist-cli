@@ -52,6 +52,49 @@ Crop an image to a bounding box and download the result:
 npx toollist@latest image crop --input ./photo.jpg --x 120 --y 80 --width 640 --height 480 --to png --sync --wait --output ./photo-crop.png
 ```
 
+Run a manifest-driven batch:
+
+```bash
+npx toollist@latest batch run --manifest ./batch.json
+```
+
+Example manifest:
+
+```json
+{
+  "version": 1,
+  "defaults": {
+    "concurrency": 2,
+    "wait": true,
+    "download_outputs": true,
+    "output_dir": "./outputs"
+  },
+  "items": [
+    {
+      "id": "resize-1",
+      "tool_name": "image.resize",
+      "input_path": "./photo.jpg",
+      "input": {
+        "width": 1200,
+        "target_mime_type": "image/webp"
+      }
+    },
+    {
+      "id": "crop-1",
+      "tool_name": "image.crop",
+      "input_path": "./photo.jpg",
+      "input": {
+        "x": 0,
+        "y": 0,
+        "width": 640,
+        "height": 480,
+        "target_mime_type": "image/webp"
+      }
+    }
+  ]
+}
+```
+
 ## Development
 
 ```bash

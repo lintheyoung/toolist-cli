@@ -2,16 +2,21 @@
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
+import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
+import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
+import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
+import { runBatchCommand } from './commands/batch/run.js';
 import { uploadCommand } from './commands/files/upload.js';
 import { getJobCommand } from './commands/jobs/get.js';
 import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
+import { readBatchManifest } from './lib/batch-manifest.js';
 import { loadConfig } from './lib/config.js';
 
 export interface CliIO {
@@ -87,6 +92,7 @@ export function getRootHelp(): string {
     '  files    Low-level file commands',
     '  image    High-level image commands',
     '  jobs     Low-level job commands',
+    '  batch    Manifest-driven batch commands',
     '  help     Show help for a command',
     '',
     'Options:',
@@ -112,10 +118,13 @@ export function getFilesHelp(): string {
     'toollist files',
     '',
     'Usage:',
-    '  toollist files upload --input <path>',
+    '  toollist files upload --input <path> [--sha256]',
     '',
     'Commands:',
     '  upload  Upload a file through the API',
+    '',
+    'Options:',
+    '  --sha256  Compute and send a client-side sha256 during upload completion',
   ].join('\n') + '\n';
 }
 
@@ -125,13 +134,93 @@ export function getImageHelp(): string {
     '',
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
+    '  convert-batch  Convert multiple images through the batch wrapper',
     '  resize   Resize an image through the API',
+    '  resize-batch  Resize multiple images through the batch wrapper',
+    '  crop-batch  Crop multiple images through the batch wrapper',
     '  crop     Crop an image through the API',
+  ].join('\n') + '\n';
+}
+
+export function getImageConvertBatchHelp(): string {
+  return [
+    'toollist image convert-batch',
+    '',
+    'Usage:',
+    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --inputs       One or more input file paths',
+    '  --input-glob   Glob pattern for input files',
+    '  --to           Target output format',
+    '  --quality      Output quality as an integer from 1 to 100',
+    '  --concurrency  Number of batch items to run in parallel',
+    '  --wait         Wait for each batch job to finish',
+    '  --output-dir   Directory for downloaded outputs',
+    '  --resume       Resume a previous batch run if possible',
+    '  --base-url     API base URL',
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getImageResizeBatchHelp(): string {
+  return [
+    'toollist image resize-batch',
+    '',
+    'Usage:',
+    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --inputs       One or more input file paths',
+    '  --input-glob   Glob pattern for input files',
+    '  --width        Resize width in pixels',
+    '  --height       Resize height in pixels',
+    '  --to           Target output format',
+    '  --concurrency  Number of batch items to run in parallel',
+    '  --wait         Wait for each batch job to finish',
+    '  --output-dir   Directory for downloaded outputs',
+    '  --resume       Resume a previous batch run if possible',
+    '  --base-url     API base URL',
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getImageCropBatchHelp(): string {
+  return [
+    'toollist image crop-batch',
+    '',
+    'Usage:',
+    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --inputs       One or more input file paths',
+    '  --input-glob   Glob pattern for input files',
+    '  --x            Crop offset from the left in pixels',
+    '  --y            Crop offset from the top in pixels',
+    '  --width        Crop width in pixels',
+    '  --height       Crop height in pixels',
+    '  --to           Target output format',
+    '  --quality      Output quality as an integer from 1 to 100',
+    '  --concurrency  Number of batch items to run in parallel',
+    '  --wait         Wait for each batch job to finish',
+    '  --output-dir   Directory for downloaded outputs',
+    '  --resume       Resume a previous batch run if possible',
+    '  --base-url     API base URL',
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -146,6 +235,18 @@ export function getJobsHelp(): string {
     'Commands:',
     '  get     Fetch a job by id',
     '  wait    Poll a job until terminal',
+  ].join('\n') + '\n';
+}
+
+export function getBatchHelp(): string {
+  return [
+    'toollist batch',
+    '',
+    'Usage:',
+    '  toollist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  run     Run a manifest-driven batch',
   ].join('\n') + '\n';
 }
 
@@ -333,12 +434,14 @@ function parseUploadArgs(args: string[]): {
   baseUrl?: string;
   token?: string;
   configPath?: string;
+  computeSha256?: boolean;
 } {
   const parsed: {
     input?: string;
     baseUrl?: string;
     token?: string;
     configPath?: string;
+    computeSha256?: boolean;
   } = {};
 
   for (let index = 0; index < args.length; index += 1) {
@@ -393,6 +496,11 @@ function parseUploadArgs(args: string[]): {
       if (consumeNext) {
         index += 1;
       }
+      continue;
+    }
+
+    if (flag === '--sha256') {
+      parsed.computeSha256 = true;
       continue;
     }
 
@@ -736,6 +844,605 @@ function parseImageResizeArgs(args: string[]): {
   return parsed;
 }
 
+function parseImageResizeBatchArgs(args: string[]): {
+  inputs?: string[];
+  inputGlob?: string;
+  width?: number;
+  height?: number;
+  to?: string;
+  concurrency?: number;
+  wait?: boolean;
+  outputDir?: string;
+  resume?: boolean;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    inputs?: string[];
+    inputGlob?: string;
+    width?: number;
+    height?: number;
+    to?: string;
+    concurrency?: number;
+    wait?: boolean;
+    outputDir?: string;
+    resume?: boolean;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--inputs') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+
+      const inputs: string[] = [value];
+
+      if (consumeNext) {
+        index += 1;
+      }
+
+      while (index + 1 < args.length && args[index + 1] && !args[index + 1]!.startsWith('-')) {
+        index += 1;
+        inputs.push(args[index]!);
+      }
+
+      parsed.inputs = [...(parsed.inputs ?? []), ...inputs];
+      continue;
+    }
+
+    if (flag === '--input-glob') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.inputGlob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--width') {
+      const widthValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(widthValue, 1)) {
+        throw new Error('Invalid value for --width.');
+      }
+
+      parsed.width = widthValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--height') {
+      const heightValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(heightValue, 1)) {
+        throw new Error('Invalid value for --height.');
+      }
+
+      parsed.height = heightValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to' && value) {
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--concurrency') {
+      const concurrencyValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(concurrencyValue, 1)) {
+        throw new Error('Invalid value for --concurrency.');
+      }
+
+      parsed.concurrency = concurrencyValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--resume') {
+      parsed.resume = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageConvertBatchArgs(args: string[]): {
+  inputs?: string[];
+  inputGlob?: string;
+  to?: string;
+  quality?: number;
+  concurrency?: number;
+  wait?: boolean;
+  outputDir?: string;
+  resume?: boolean;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    inputs?: string[];
+    inputGlob?: string;
+    to?: string;
+    quality?: number;
+    concurrency?: number;
+    wait?: boolean;
+    outputDir?: string;
+    resume?: boolean;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--inputs') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+
+      const inputs: string[] = [value];
+
+      if (consumeNext) {
+        index += 1;
+      }
+
+      while (index + 1 < args.length && args[index + 1] && !args[index + 1]!.startsWith('-')) {
+        index += 1;
+        inputs.push(args[index]!);
+      }
+
+      parsed.inputs = [...(parsed.inputs ?? []), ...inputs];
+      continue;
+    }
+
+    if (flag === '--input-glob') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.inputGlob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to' && value) {
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--quality') {
+      const qualityValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(qualityValue, 1, 100)) {
+        throw new Error('Invalid value for --quality.');
+      }
+
+      parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--concurrency') {
+      const concurrencyValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(concurrencyValue, 1)) {
+        throw new Error('Invalid value for --concurrency.');
+      }
+
+      parsed.concurrency = concurrencyValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--resume') {
+      parsed.resume = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageCropBatchArgs(args: string[]): {
+  inputs?: string[];
+  inputGlob?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  to?: string;
+  quality?: number;
+  concurrency?: number;
+  wait?: boolean;
+  outputDir?: string;
+  resume?: boolean;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    inputs?: string[];
+    inputGlob?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    to?: string;
+    quality?: number;
+    concurrency?: number;
+    wait?: boolean;
+    outputDir?: string;
+    resume?: boolean;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--inputs') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+
+      const inputs: string[] = [value];
+
+      if (consumeNext) {
+        index += 1;
+      }
+
+      while (index + 1 < args.length && args[index + 1] && !args[index + 1]!.startsWith('-')) {
+        index += 1;
+        inputs.push(args[index]!);
+      }
+
+      parsed.inputs = [...(parsed.inputs ?? []), ...inputs];
+      continue;
+    }
+
+    if (flag === '--input-glob') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.inputGlob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--x') {
+      const xValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(xValue, 0)) {
+        throw new Error('Invalid value for --x.');
+      }
+
+      parsed.x = xValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--y') {
+      const yValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(yValue, 0)) {
+        throw new Error('Invalid value for --y.');
+      }
+
+      parsed.y = yValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--width') {
+      const widthValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(widthValue, 1)) {
+        throw new Error('Invalid value for --width.');
+      }
+
+      parsed.width = widthValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--height') {
+      const heightValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(heightValue, 1)) {
+        throw new Error('Invalid value for --height.');
+      }
+
+      parsed.height = heightValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to' && value) {
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--quality') {
+      const qualityValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(qualityValue, 1, 100)) {
+        throw new Error('Invalid value for --quality.');
+      }
+
+      parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--concurrency') {
+      const concurrencyValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(concurrencyValue, 1)) {
+        throw new Error('Invalid value for --concurrency.');
+      }
+
+      parsed.concurrency = concurrencyValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--resume') {
+      parsed.resume = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
 function parseImageCropArgs(args: string[]): {
   input?: string;
   x?: number;
@@ -1039,6 +1746,124 @@ function parseJobArgs(args: string[]): {
   return parsed;
 }
 
+function parseBatchRunArgs(args: string[]): {
+  manifestPath?: string;
+  resume?: boolean;
+  concurrency?: number;
+  outputDir?: string;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    manifestPath?: string;
+    resume?: boolean;
+    concurrency?: number;
+    outputDir?: string;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--manifest') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.manifestPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--resume') {
+      parsed.resume = true;
+      continue;
+    }
+
+    if (flag === '--concurrency') {
+      const concurrencyValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(concurrencyValue, 1)) {
+        throw new Error('Invalid value for --concurrency.');
+      }
+
+      parsed.concurrency = concurrencyValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
 async function resolveApiCredentials(args: {
   baseUrl?: string;
   token?: string;
@@ -1128,6 +1953,48 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
     }
   }
 
+  if (command === 'batch') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getBatchHelp());
+      return 0;
+    }
+
+    if (subcommand === 'run') {
+      try {
+        const parsed = parseBatchRunArgs(commandArgs);
+
+        if (!parsed.manifestPath) {
+          io.stderr('Missing required option: --manifest\n');
+          return 1;
+        }
+
+        if (!parsed.baseUrl) {
+          const manifest = await readBatchManifest(parsed.manifestPath);
+          if (manifest.defaults?.base_url) {
+            parsed.baseUrl = manifest.defaults.base_url;
+          }
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await runBatchCommand({
+          manifestPath: parsed.manifestPath,
+          resume: parsed.resume ?? false,
+          concurrency: parsed.concurrency,
+          outputDir: parsed.outputDir,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Batch run failed.'}\n`);
+        return 1;
+      }
+    }
+  }
+
   if (command === 'tools') {
     const [subcommand, ...commandArgs] = rest;
 
@@ -1175,6 +2042,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           input: parsed.input,
           ...credentials,
           configPath: parsed.configPath,
+          computeSha256: parsed.computeSha256 ?? false,
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -1190,6 +2058,21 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
 
     if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
       io.stdout(getImageHelp());
+      return 0;
+    }
+
+    if (subcommand === 'resize-batch' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageResizeBatchHelp());
+      return 0;
+    }
+
+    if (subcommand === 'crop-batch' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageCropBatchHelp());
+      return 0;
+    }
+
+    if (subcommand === 'convert-batch' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageConvertBatchHelp());
       return 0;
     }
 
@@ -1227,6 +2110,85 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       }
     }
 
+    if (subcommand === 'convert-batch') {
+      try {
+        const parsed = parseImageConvertBatchArgs(commandArgs);
+
+        if (!parsed.to) {
+          io.stderr('Missing required option: --to\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageConvertBatchCommand({
+          inputs: parsed.inputs,
+          inputGlob: parsed.inputGlob,
+          to: parsed.to,
+          quality: parsed.quality,
+          concurrency: parsed.concurrency,
+          wait: parsed.wait,
+          outputDir: parsed.outputDir,
+          resume: parsed.resume,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image convert-batch failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'crop-batch') {
+      try {
+        const parsed = parseImageCropBatchArgs(commandArgs);
+
+        if (!parsed.x && parsed.x !== 0) {
+          io.stderr('Missing required option: --x\n');
+          return 1;
+        }
+
+        if (parsed.y === undefined) {
+          io.stderr('Missing required option: --y\n');
+          return 1;
+        }
+
+        if (parsed.width === undefined) {
+          io.stderr('Missing required option: --width\n');
+          return 1;
+        }
+
+        if (parsed.height === undefined) {
+          io.stderr('Missing required option: --height\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageCropBatchCommand({
+          inputs: parsed.inputs,
+          inputGlob: parsed.inputGlob,
+          x: parsed.x,
+          y: parsed.y,
+          width: parsed.width,
+          height: parsed.height,
+          to: parsed.to,
+          quality: parsed.quality,
+          concurrency: parsed.concurrency,
+          wait: parsed.wait,
+          outputDir: parsed.outputDir,
+          resume: parsed.resume,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image crop-batch failed.'}\n`);
+        return 1;
+      }
+    }
+
     if (subcommand === 'resize') {
       try {
         const parsed = parseImageResizeArgs(commandArgs);
@@ -1259,6 +2221,29 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image resize failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'resize-batch') {
+      try {
+        const parsed = parseImageResizeBatchArgs(commandArgs);
+
+        if (parsed.width === undefined && parsed.height === undefined) {
+          io.stderr('Missing required option: --width or --height\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageResizeBatchCommand({
+          ...parsed,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image resize-batch failed.'}\n`);
         return 1;
       }
     }

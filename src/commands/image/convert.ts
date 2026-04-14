@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { apiRequest } from '../../lib/http.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
+import { assertSupportedConvertInputPath } from './convert-input-policy.js';
 
 export interface ImageConvertCommandArgs {
   input: string;
@@ -38,6 +39,15 @@ export interface ImageConvertJobResult {
   [key: string]: unknown;
 }
 
+function isTerminalJobStatus(status: string): boolean {
+  return (
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'canceled' ||
+    status === 'timed_out'
+  );
+}
+
 function getOutputFileId(job: ImageConvertJobResult): string | null {
   if (!job.result || typeof job.result !== 'object') {
     return null;
@@ -58,6 +68,7 @@ export interface ImageConvertDependencies {
   apiRequest: typeof apiRequest;
   uploadCommand: typeof uploadCommand;
   waitJobCommand: typeof waitJobCommand;
+  assertSupportedConvertInputPath: typeof assertSupportedConvertInputPath;
   fetch: typeof fetch;
   writeFile: typeof writeFile;
   randomUUID: typeof randomUUID;
@@ -84,6 +95,7 @@ function createDefaultDependencies(): ImageConvertDependencies {
     apiRequest,
     uploadCommand,
     waitJobCommand,
+    assertSupportedConvertInputPath,
     fetch: globalThis.fetch.bind(globalThis),
     writeFile,
     randomUUID,
@@ -146,6 +158,8 @@ export async function imageConvertCommand(
     ...dependencies,
   };
 
+  await deps.assertSupportedConvertInputPath(args.input);
+
   const sourceFile = await deps.uploadCommand({
     input: args.input,
     baseUrl: args.baseUrl,
@@ -182,13 +196,15 @@ export async function imageConvertCommand(
     return createJobResponse.data.job;
   }
 
-  const job = await deps.waitJobCommand({
-    jobId: createJobResponse.data.job.id,
-    baseUrl: args.baseUrl,
-    token: args.token,
-    timeoutSeconds: args.timeoutSeconds ?? 60,
-    configPath: args.configPath,
-  });
+  const job = isTerminalJobStatus(createJobResponse.data.job.status)
+    ? createJobResponse.data.job
+    : await deps.waitJobCommand({
+        jobId: createJobResponse.data.job.id,
+        baseUrl: args.baseUrl,
+        token: args.token,
+        timeoutSeconds: args.timeoutSeconds ?? 60,
+        configPath: args.configPath,
+      });
 
   if (args.output) {
     const outputFileId = getOutputFileId(job);
