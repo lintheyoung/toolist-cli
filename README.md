@@ -40,6 +40,18 @@ Run a high-level image conversion:
 npx toollist@latest image convert --input ./photo.jpg --to webp --sync --wait
 ```
 
+Remove a watermark from a single image:
+
+```bash
+npx toollist@latest image remove-watermark --input ./photo.jpg --wait --output ./photo-clean.jpg
+```
+
+Remove watermarks from a batch of images in a zip:
+
+```bash
+npx toollist@latest image remove-watermark-batch --inputs ./a.jpg ./b.jpg --wait --output ./cleaned-images.zip
+```
+
 Resize an image and write the derived artifact locally:
 
 ```bash

@@ -6,6 +6,8 @@ import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
 import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
+import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
+import { imageRemoveWatermarkBatchCommand } from './commands/image/remove-watermark-batch.js';
 import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
@@ -135,6 +137,8 @@ export function getImageHelp(): string {
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -143,6 +147,8 @@ export function getImageHelp(): string {
     'Commands:',
     '  convert  Convert an image format through the API',
     '  convert-batch  Convert multiple images through the batch wrapper',
+    '  remove-watermark  Remove a watermark from an image through the API',
+    '  remove-watermark-batch  Remove watermarks from a zipped image batch through the API',
     '  resize   Resize an image through the API',
     '  resize-batch  Resize multiple images through the batch wrapper',
     '  crop-batch  Crop multiple images through the batch wrapper',
@@ -190,6 +196,26 @@ export function getImageResizeBatchHelp(): string {
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
+    '  --base-url     API base URL',
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getImageRemoveWatermarkBatchHelp(): string {
+  return [
+    'toollist image remove-watermark-batch',
+    '',
+    'Usage:',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --inputs       One or more input file paths',
+    '  --input-glob   Glob pattern for input files',
+    '  --wait         Wait for the batch job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download results.zip to a local path',
     '  --base-url     API base URL',
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
@@ -626,6 +652,259 @@ function parseImageConvertArgs(args: string[]): {
 
     if (flag === '--sync') {
       parsed.sync = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output' && value) {
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageRemoveWatermarkArgs(args: string[]): {
+  input?: string;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    input?: string;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--input' && value) {
+      parsed.input = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output' && value) {
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseImageRemoveWatermarkBatchArgs(args: string[]): {
+  inputs?: string[];
+  inputGlob?: string;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    inputs?: string[];
+    inputGlob?: string;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--inputs') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+
+      const inputs: string[] = [value];
+
+      if (consumeNext) {
+        index += 1;
+      }
+
+      while (index + 1 < args.length && args[index + 1] && !args[index + 1]!.startsWith('-')) {
+        index += 1;
+        inputs.push(args[index]!);
+      }
+
+      parsed.inputs = [...(parsed.inputs ?? []), ...inputs];
+      continue;
+    }
+
+    if (flag === '--input-glob') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.inputGlob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
       continue;
     }
 
@@ -2076,6 +2355,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       return 0;
     }
 
+    if (subcommand === 'remove-watermark-batch' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageRemoveWatermarkBatchHelp());
+      return 0;
+    }
+
     if (subcommand === 'convert') {
       try {
         const parsed = parseImageConvertArgs(commandArgs);
@@ -2106,6 +2390,59 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image convert failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'remove-watermark') {
+      try {
+        const parsed = parseImageRemoveWatermarkArgs(commandArgs);
+
+        if (!parsed.input) {
+          io.stderr('Missing required option: --input\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageRemoveWatermarkCommand({
+          input: parsed.input,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image remove-watermark failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'remove-watermark-batch') {
+      try {
+        const parsed = parseImageRemoveWatermarkBatchArgs(commandArgs);
+
+        if ((!parsed.inputs || parsed.inputs.length === 0) && !parsed.inputGlob) {
+          io.stderr('Missing required option: --inputs or --input-glob\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageRemoveWatermarkBatchCommand({
+          inputs: parsed.inputs,
+          inputGlob: parsed.inputGlob,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image remove-watermark-batch failed.'}\n`);
         return 1;
       }
     }

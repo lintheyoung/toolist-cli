@@ -1,0 +1,210 @@
+import { randomUUID } from 'node:crypto';
+import { rm, writeFile } from 'node:fs/promises';
+
+import { apiRequest } from '../../lib/http.js';
+import { createZipBatchInput, type CreateZipBatchInputResult } from '../../lib/zip-batch-input.js';
+import { uploadCommand } from '../files/upload.js';
+import { waitJobCommand } from '../jobs/wait.js';
+
+export interface ImageRemoveWatermarkBatchCommandArgs {
+  inputs?: string[];
+  inputGlob?: string;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl: string;
+  token: string;
+  configPath?: string;
+}
+
+export interface ImageRemoveWatermarkBatchJobOutput {
+  filename?: string;
+  outputFileId?: string;
+  mimeType?: string;
+  storageKey?: string;
+  [key: string]: unknown;
+}
+
+export interface ImageRemoveWatermarkBatchJobResult {
+  id: string;
+  status: string;
+  toolName: string;
+  toolVersion: string;
+  input?: Record<string, unknown>;
+  result?: {
+    output?: ImageRemoveWatermarkBatchJobOutput;
+    batch?: Record<string, unknown>;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
+export interface ImageRemoveWatermarkBatchDependencies {
+  apiRequest: typeof apiRequest;
+  createZipBatchInput: typeof createZipBatchInput;
+  uploadCommand: typeof uploadCommand;
+  waitJobCommand: typeof waitJobCommand;
+  fetch: typeof fetch;
+  writeFile: typeof writeFile;
+  randomUUID: typeof randomUUID;
+  rm: typeof rm;
+}
+
+type CreateJobResponse = {
+  data: {
+    job: ImageRemoveWatermarkBatchJobResult;
+  };
+  request_id: string;
+};
+
+function createDefaultDependencies(): ImageRemoveWatermarkBatchDependencies {
+  return {
+    apiRequest,
+    createZipBatchInput,
+    uploadCommand,
+    waitJobCommand,
+    fetch: globalThis.fetch.bind(globalThis),
+    writeFile,
+    randomUUID,
+    rm,
+  };
+}
+
+async function cleanupOwnedTempDir(
+  zipInput: CreateZipBatchInputResult,
+  dependencies: Pick<ImageRemoveWatermarkBatchDependencies, 'rm'>,
+): Promise<void> {
+  if (!zipInput.cleanupPath) {
+    return;
+  }
+
+  await dependencies.rm(zipInput.cleanupPath, { recursive: true, force: true });
+}
+
+function isTerminalJobStatus(status: string): boolean {
+  return (
+    status === 'succeeded' ||
+    status === 'failed' ||
+    status === 'canceled' ||
+    status === 'timed_out'
+  );
+}
+
+function getOutputFileId(job: ImageRemoveWatermarkBatchJobResult): string | null {
+  if (!job.result || typeof job.result !== 'object') {
+    return null;
+  }
+
+  const output = (job.result as { output?: unknown }).output;
+
+  if (!output || typeof output !== 'object') {
+    return null;
+  }
+
+  return typeof (output as { outputFileId?: unknown }).outputFileId === 'string'
+    ? (output as { outputFileId: string }).outputFileId
+    : null;
+}
+
+function buildDownloadUrl(baseUrl: string, fileId: string): string {
+  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
+}
+
+async function downloadOutputFile(
+  args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  outputFileId: string,
+  dependencies: Pick<ImageRemoveWatermarkBatchDependencies, 'fetch' | 'writeFile'>,
+): Promise<void> {
+  if (!args.output) {
+    return;
+  }
+
+  const response = await dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
+    headers: {
+      authorization: `Bearer ${args.token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download watermark batch output file ${outputFileId}.`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await dependencies.writeFile(args.output, bytes);
+}
+
+export async function imageRemoveWatermarkBatchCommand(
+  args: ImageRemoveWatermarkBatchCommandArgs,
+  dependencies: Partial<ImageRemoveWatermarkBatchDependencies> = {},
+): Promise<ImageRemoveWatermarkBatchJobResult> {
+  const deps = {
+    ...createDefaultDependencies(),
+    ...dependencies,
+  };
+
+  const zipInput = await deps.createZipBatchInput({
+    inputs: args.inputs,
+    inputGlob: args.inputGlob,
+  });
+
+  try {
+    const sourceFile = await deps.uploadCommand({
+      input: zipInput.zipPath,
+      baseUrl: args.baseUrl,
+      token: args.token,
+      configPath: args.configPath,
+    });
+
+    const createJobResponse = await deps.apiRequest<CreateJobResponse>({
+      baseUrl: args.baseUrl,
+      token: args.token,
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: {
+        tool_name: 'image.gemini_nb_remove_watermark_batch',
+        idempotency_key: deps.randomUUID(),
+        input: {
+          input_file_id: sourceFile.file_id,
+        },
+      },
+    });
+
+    const shouldWait = args.wait || Boolean(args.output);
+
+    if (!shouldWait) {
+      return createJobResponse.data.job;
+    }
+
+    const job = isTerminalJobStatus(createJobResponse.data.job.status)
+      ? createJobResponse.data.job
+      : await deps.waitJobCommand({
+          jobId: createJobResponse.data.job.id,
+          baseUrl: args.baseUrl,
+          token: args.token,
+          timeoutSeconds: args.timeoutSeconds ?? 60,
+          configPath: args.configPath,
+        });
+
+    if (args.output) {
+      const outputFileId = getOutputFileId(job);
+
+      if (!outputFileId) {
+        throw new Error('The watermark removal batch job did not produce an output file.');
+      }
+
+      await downloadOutputFile(
+        {
+          baseUrl: args.baseUrl,
+          token: args.token,
+          output: args.output,
+        },
+        outputFileId,
+        deps,
+      );
+    }
+
+    return job;
+  } finally {
+    await cleanupOwnedTempDir(zipInput, deps);
+  }
+}

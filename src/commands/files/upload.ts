@@ -50,6 +50,7 @@ type CompleteUploadResponse = {
 };
 
 const MIME_TYPES: Record<string, string> = {
+  '.zip': 'application/zip',
   '.avif': 'image/avif',
   '.gif': 'image/gif',
   '.jpeg': 'image/jpeg',
