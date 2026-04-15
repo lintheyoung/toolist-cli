@@ -1,7 +1,7 @@
 # Release Handbook
 
 This handbook captures the minimum steps required to turn the local
-`toollist-cli` repository into a public GitHub repository and publish it to npm.
+`toolist-cli` repository into a public GitHub repository and publish it to npm.
 
 ## Current status
 
@@ -41,11 +41,11 @@ Recommended `package.json` fields once the canonical repo URL exists:
 {
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/<owner>/toollist-cli.git"
+    "url": "git+https://github.com/<owner>/toolist-cli.git"
   },
-  "homepage": "https://github.com/<owner>/toollist-cli#readme",
+  "homepage": "https://github.com/<owner>/toolist-cli#readme",
   "bugs": {
-    "url": "https://github.com/<owner>/toollist-cli/issues"
+    "url": "https://github.com/<owner>/toolist-cli/issues"
   }
 }
 ```
@@ -82,4 +82,4 @@ It will:
 
 - `prepack` already ensures a fresh build before packing or publishing.
 - `dist/` is intentionally ignored in git and generated at release time.
-- If the npm package name `toollist` is not available publicly, switch to a scoped name such as `@toollist/cli` before the first publish.
+- If the npm package name `toolist-cli` is not available publicly, switch to a scoped name such as `@toolist/cli` before the first publish.

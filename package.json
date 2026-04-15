@@ -1,18 +1,20 @@
 {
-  "name": "toollist",
+  "name": "toolist-cli",
   "version": "0.1.0",
   "description": "Agent-first CLI for Toollist platform APIs.",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lintheyoung/toollist.git"
+    "url": "git+https://github.com/lintheyoung/toolist-cli.git"
   },
-  "homepage": "https://github.com/lintheyoung/toollist#readme",
+  "homepage": "https://github.com/lintheyoung/toolist-cli#readme",
   "bugs": {
-    "url": "https://github.com/lintheyoung/toollist/issues"
+    "url": "https://github.com/lintheyoung/toolist-cli/issues"
   },
-  "bin": "./dist/cli.js",
+  "bin": {
+    "toolist": "./dist/cli.js"
+  },
   "files": [
     "dist",
     "README.md"

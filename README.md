@@ -7,14 +7,14 @@ Toollist CLI is the standalone, agent-first command-line interface for the Tooll
 Run it without installing anything:
 
 ```bash
-npx toollist@latest --help
+npx toolist-cli@latest --help
 ```
 
 Install it globally:
 
 ```bash
-npm i -g toollist
-toollist --help
+npm install -g toolist-cli
+toolist --help
 ```
 
 ## Usage
@@ -22,7 +22,7 @@ toollist --help
 Authenticate with the platform:
 
 ```bash
-npx toollist@latest login --base-url https://api.example.com
+npx toolist-cli@latest login --base-url https://api.example.com
 ```
 
 After logging in, commands reuse the saved login automatically. You only need
@@ -31,43 +31,43 @@ After logging in, commands reuse the saved login automatically. You only need
 Inspect your current identity:
 
 ```bash
-npx toollist@latest whoami
+npx toolist-cli@latest whoami
 ```
 
 Run a high-level image conversion:
 
 ```bash
-npx toollist@latest image convert --input ./photo.jpg --to webp --sync --wait
+npx toolist-cli@latest image convert --input ./photo.jpg --to webp --sync --wait
 ```
 
 Remove a watermark from a single image:
 
 ```bash
-npx toollist@latest image remove-watermark --input ./photo.jpg --wait --output ./photo-clean.jpg
+npx toolist-cli@latest image remove-watermark --input ./photo.jpg --wait --output ./photo-clean.jpg
 ```
 
 Remove watermarks from a batch of images in a zip:
 
 ```bash
-npx toollist@latest image remove-watermark-batch --inputs ./a.jpg ./b.jpg --wait --output ./cleaned-images.zip
+npx toolist-cli@latest image remove-watermark-batch --inputs ./a.jpg ./b.jpg --wait --output ./cleaned-images.zip
 ```
 
 Resize an image and write the derived artifact locally:
 
 ```bash
-npx toollist@latest image resize --input ./photo.jpg --width 1200 --to webp --sync --wait --output ./photo-1200.webp
+npx toolist-cli@latest image resize --input ./photo.jpg --width 1200 --to webp --sync --wait --output ./photo-1200.webp
 ```
 
 Crop an image to a bounding box and download the result:
 
 ```bash
-npx toollist@latest image crop --input ./photo.jpg --x 120 --y 80 --width 640 --height 480 --to png --sync --wait --output ./photo-crop.png
+npx toolist-cli@latest image crop --input ./photo.jpg --x 120 --y 80 --width 640 --height 480 --to png --sync --wait --output ./photo-crop.png
 ```
 
 Run a manifest-driven batch:
 
 ```bash
-npx toollist@latest batch run --manifest ./batch.json
+npx toolist-cli@latest batch run --manifest ./batch.json
 ```
 
 Example manifest:
