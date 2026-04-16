@@ -86,6 +86,46 @@ describe('files upload command', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('defaults files upload to the hosted Toolist base URL when --base-url is omitted', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_123',
+      upload_url: 'https://upload.example.com/file_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_123',
+        status: 'uploaded',
+      },
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+
+    const result = await runCli([
+      'files',
+      'upload',
+      '--input',
+      '/tmp/photo.jpg',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(uploadCommand).toHaveBeenCalledWith({
+      input: '/tmp/photo.jpg',
+      baseUrl: 'https://tooli.st',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      computeSha256: false,
+    });
+  });
+
   it('infers file metadata, uploads bytes, and completes the file upload without sha256 by default', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const inputPath = join(tempDir, 'photo.jpg');

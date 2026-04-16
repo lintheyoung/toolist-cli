@@ -26,6 +26,8 @@ describe('root command', () => {
     const result = await runCli(['--help']);
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('Default API base URL: https://tooli.st');
+    expect(result.stdout).toContain('toollist tools list');
     expect(result.stdout).toContain('login');
     expect(result.stdout).toContain('tools');
   });

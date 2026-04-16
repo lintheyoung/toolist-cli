@@ -32,6 +32,8 @@ const defaultIO: CliIO = {
   stderr: (chunk) => process.stderr.write(chunk),
 };
 
+export const DEFAULT_BASE_URL = 'https://tooli.st';
+
 function unknownOption(flag: string): never {
   throw new Error(`Unknown option: ${flag}`);
 }
@@ -84,6 +86,9 @@ export function getRootHelp(): string {
   return [
     'toollist - agent-first CLI for the Toollist platform',
     '',
+    `Default API base URL: ${DEFAULT_BASE_URL}`,
+    'Use --base-url only when targeting self-hosted, staging, or custom environments.',
+    '',
     'Usage:',
     '  toollist <command> [options]',
     '',
@@ -97,6 +102,9 @@ export function getRootHelp(): string {
     '  jobs     Low-level job commands',
     '  batch    Manifest-driven batch commands',
     '  help     Show help for a command',
+    '',
+    'Discover supported tools:',
+    '  toollist tools list',
     '',
     'Options:',
     '  -h, --help  Show help',
@@ -123,6 +131,8 @@ export function getFilesHelp(): string {
     'Usage:',
     '  toollist files upload --input <path> [--sha256]',
     '',
+    `Defaults to ${DEFAULT_BASE_URL}.`,
+    '',
     'Commands:',
     '  upload  Upload a file through the API',
     '',
@@ -134,6 +144,8 @@ export function getFilesHelp(): string {
 export function getImageHelp(): string {
   return [
     'toollist image',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
@@ -161,6 +173,8 @@ export function getImageConvertBatchHelp(): string {
   return [
     'toollist image convert-batch',
     '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
     'Usage:',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '',
@@ -173,7 +187,7 @@ export function getImageConvertBatchHelp(): string {
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
-    '  --base-url     API base URL',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -183,6 +197,8 @@ export function getImageConvertBatchHelp(): string {
 export function getImageResizeBatchHelp(): string {
   return [
     'toollist image resize-batch',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -197,7 +213,7 @@ export function getImageResizeBatchHelp(): string {
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
-    '  --base-url     API base URL',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -208,6 +224,8 @@ export function getImageRemoveWatermarkBatchHelp(): string {
   return [
     'toollist image remove-watermark-batch',
     '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
     'Usage:',
     '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '',
@@ -217,7 +235,7 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     '  --wait         Wait for the batch job to finish',
     '  --timeout      Maximum wait time in seconds',
     '  --output       Download results.zip to a local path',
-    '  --base-url     API base URL',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -227,6 +245,8 @@ export function getImageRemoveWatermarkBatchHelp(): string {
 export function getImageCropBatchHelp(): string {
   return [
     'toollist image crop-batch',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -244,7 +264,7 @@ export function getImageCropBatchHelp(): string {
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
-    '  --base-url     API base URL',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -254,6 +274,8 @@ export function getImageCropBatchHelp(): string {
 export function getJobsHelp(): string {
   return [
     'toollist jobs',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
     '  toollist jobs get <jobId>',
@@ -268,6 +290,8 @@ export function getJobsHelp(): string {
 export function getBatchHelp(): string {
   return [
     'toollist batch',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
     '  toollist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -2161,16 +2185,12 @@ async function resolveApiCredentials(args: {
 
   const config = await loadConfig(args.configPath);
 
-  if (!config?.baseUrl && !args.baseUrl) {
-    throw new Error('Missing API base URL. Pass --base-url or use a saved login.');
-  }
-
   if (!config?.accessToken && !args.token) {
     throw new Error('Missing authentication. Pass --token or use a saved login.');
   }
 
   return {
-    baseUrl: args.baseUrl ?? config!.baseUrl,
+    baseUrl: args.baseUrl ?? config?.baseUrl ?? DEFAULT_BASE_URL,
     token: args.token ?? config!.accessToken!,
   };
 }
@@ -2186,14 +2206,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   if (command === 'login') {
     try {
       const loginArgs = parseLoginArgs(rest);
-
-      if (!loginArgs.baseUrl) {
-        io.stderr('Missing required option: --base-url\n');
-        return 1;
-      }
-
       const result = await loginCommand({
-        baseUrl: loginArgs.baseUrl,
+        baseUrl: loginArgs.baseUrl ?? DEFAULT_BASE_URL,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
       }, {

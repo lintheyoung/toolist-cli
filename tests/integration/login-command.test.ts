@@ -30,7 +30,7 @@ describe('login command', () => {
     let stdout = '';
     let stderr = '';
 
-    const exitCode = await main(['login', '--base-url', 'https://api.example.com', '--json'], {
+    const exitCode = await main(['login', '--json'], {
       stdout: (chunk) => {
         stdout += chunk;
       },
@@ -41,7 +41,7 @@ describe('login command', () => {
 
     expect(exitCode).toBe(0);
     expect(loginCommand).toHaveBeenCalledWith({
-      baseUrl: 'https://api.example.com',
+      baseUrl: 'https://tooli.st',
       clientName: undefined,
       configPath: undefined,
     }, {

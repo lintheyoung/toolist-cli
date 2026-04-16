@@ -167,6 +167,69 @@ describe('image remove-watermark command', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('defaults remove-watermark to the hosted Toolist base URL when --base-url is omitted', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_watermark_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(uploadCommand).toHaveBeenCalledWith({
+      input: '/tmp/photo.png',
+      baseUrl: 'https://tooli.st',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+    });
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://tooli.st',
+      token: 'tgc_cli_secret',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: expect.objectContaining({
+        tool_name: 'image.gemini_nb_remove_watermark',
+      }),
+    });
+  });
+
   it('skips waitJobCommand and downloads directly when the create-job response is already terminal and --output is set', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo-clean.png');

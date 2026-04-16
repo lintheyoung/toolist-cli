@@ -22,8 +22,11 @@ toolist --help
 Authenticate with the platform:
 
 ```bash
-npx toolist-cli@latest login --base-url https://api.example.com
+npx toolist-cli@latest login
 ```
+
+By default the CLI connects to `https://tooli.st`. Use `--base-url` only when
+targeting a self-hosted, staging, or other custom environment.
 
 After logging in, commands reuse the saved login automatically. You only need
 `--token` when you want to override the saved credentials explicitly.
