@@ -44,6 +44,8 @@ describe('login command', () => {
       baseUrl: 'https://api.example.com',
       clientName: undefined,
       configPath: undefined,
+    }, {
+      announceBrowserLaunch: expect.any(Function),
     });
     expect(JSON.parse(stdout)).toEqual({
       baseUrl: 'https://api.example.com',
@@ -64,6 +66,7 @@ describe('login command', () => {
     const { loginCommand } = await import('../../src/commands/login.js');
 
     const openBrowser = vi.fn(async () => undefined);
+    const announceBrowserLaunch = vi.fn();
     const saveConfig = vi.fn(async () => undefined);
     const startCallbackServer = vi.fn(async (expectedState: string) => ({
       redirectUri: 'http://127.0.0.1:45231/callback',
@@ -96,6 +99,7 @@ describe('login command', () => {
       },
       {
         openBrowser,
+        announceBrowserLaunch,
         saveConfig,
         startCallbackServer,
         apiRequest,
@@ -106,6 +110,7 @@ describe('login command', () => {
     );
 
     expect(startCallbackServer).toHaveBeenCalledWith('state_123');
+    expect(announceBrowserLaunch).toHaveBeenCalledTimes(1);
     expect(openBrowser).toHaveBeenCalledTimes(1);
 
     const openedUrl = new URL(openBrowser.mock.calls[0]![0]);

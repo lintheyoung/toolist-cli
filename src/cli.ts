@@ -2196,6 +2196,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         baseUrl: loginArgs.baseUrl,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
+      }, {
+        announceBrowserLaunch: (url) => {
+          io.stderr('Opening browser for Toolist login...\n');
+          io.stderr(`If the browser does not open, visit this URL manually:\n${url}\n`);
+        },
       });
       io.stdout(`${JSON.stringify(result)}\n`);
       return 0;

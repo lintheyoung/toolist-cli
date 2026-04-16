@@ -26,6 +26,7 @@ export interface LoginCommandResult {
 
 export interface LoginDependencies {
   openBrowser: (url: string) => Promise<void>;
+  announceBrowserLaunch: (url: string) => Promise<void> | void;
   startCallbackServer: (expectedState: string) => Promise<CallbackServer>;
   apiRequest: typeof apiRequest;
   saveConfig: typeof saveConfig;
@@ -79,6 +80,7 @@ function createDefaultCodeChallenge(codeVerifier: string): string {
 function createDefaultDependencies(): LoginDependencies {
   return {
     openBrowser,
+    announceBrowserLaunch: () => undefined,
     startCallbackServer,
     apiRequest,
     saveConfig,
@@ -110,6 +112,7 @@ export async function loginCommand(
     startUrl.searchParams.set('client_name', clientName);
     startUrl.searchParams.set('base_url', args.baseUrl);
 
+    await deps.announceBrowserLaunch(startUrl.toString());
     await deps.openBrowser(startUrl.toString());
 
     let exchangeEnvelope: LoginExchangeResponse | null = null;
