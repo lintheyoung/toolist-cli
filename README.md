@@ -73,6 +73,12 @@ Run a manifest-driven batch:
 npx toolist-cli@latest batch run --manifest ./batch.json
 ```
 
+Upload a public file and receive a `public_url` in the JSON response:
+
+```bash
+toolist files upload --input ./photo.jpg --public --json
+```
+
 Example manifest:
 
 ```json

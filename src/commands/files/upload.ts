@@ -10,11 +10,13 @@ export interface UploadFileCommandArgs {
   token: string;
   configPath?: string;
   computeSha256?: boolean;
+  public?: boolean;
 }
 
 export interface UploadFileCommandResult {
   file_id: string;
   upload_url: string;
+  public_url?: string;
   headers: Record<string, string>;
   filename: string;
   mime_type: string;
@@ -37,6 +39,7 @@ type CreateUploadResponse = {
   data: {
     file_id: string;
     upload_url: string;
+    public_url?: string;
     headers: Record<string, string>;
   };
   request_id: string;
@@ -99,6 +102,7 @@ export async function uploadCommand(
       filename,
       mime_type: mimeType,
       size_bytes: fileStats.size,
+      ...(args.public ? { public: true } : {}),
     },
   });
 

@@ -129,7 +129,7 @@ export function getFilesHelp(): string {
     'toollist files',
     '',
     'Usage:',
-    '  toollist files upload --input <path> [--sha256]',
+    '  toollist files upload --input <path> [--sha256] [--public]',
     '',
     `Defaults to ${DEFAULT_BASE_URL}.`,
     '',
@@ -138,6 +138,7 @@ export function getFilesHelp(): string {
     '',
     'Options:',
     '  --sha256  Compute and send a client-side sha256 during upload completion',
+    '  --public  Request a public upload URL and public file access',
   ].join('\n') + '\n';
 }
 
@@ -486,6 +487,7 @@ function parseUploadArgs(args: string[]): {
   token?: string;
   configPath?: string;
   computeSha256?: boolean;
+  public?: boolean;
 } {
   const parsed: {
     input?: string;
@@ -493,6 +495,7 @@ function parseUploadArgs(args: string[]): {
     token?: string;
     configPath?: string;
     computeSha256?: boolean;
+    public?: boolean;
   } = {};
 
   for (let index = 0; index < args.length; index += 1) {
@@ -552,6 +555,11 @@ function parseUploadArgs(args: string[]): {
 
     if (flag === '--sha256') {
       parsed.computeSha256 = true;
+      continue;
+    }
+
+    if (flag === '--public') {
+      parsed.public = true;
       continue;
     }
 
@@ -2342,6 +2350,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           ...credentials,
           configPath: parsed.configPath,
           computeSha256: parsed.computeSha256 ?? false,
+          ...(parsed.public ? { public: true } : {}),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
