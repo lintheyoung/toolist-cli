@@ -69,7 +69,7 @@ describe('login command', () => {
     const announceBrowserLaunch = vi.fn();
     const saveConfig = vi.fn(async () => undefined);
     const startCallbackServer = vi.fn(async (expectedState: string) => ({
-      redirectUri: 'http://127.0.0.1:45231/callback',
+      redirectUri: 'http://localhost:45231/callback',
       waitForCallback: async () => ({
         code: 'code_123',
         state: expectedState,
@@ -115,7 +115,7 @@ describe('login command', () => {
 
     const openedUrl = new URL(openBrowser.mock.calls[0]![0]);
     expect(openedUrl.origin + openedUrl.pathname).toBe('https://api.example.com/api/cli/auth/start');
-    expect(openedUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:45231/callback');
+    expect(openedUrl.searchParams.get('redirect_uri')).toBe('http://localhost:45231/callback');
     expect(openedUrl.searchParams.get('state')).toBe('state_123');
     expect(openedUrl.searchParams.get('code_challenge')).toBe('challenge_123');
     expect(openedUrl.searchParams.get('client_name')).toBe('Local CLI');
@@ -128,7 +128,7 @@ describe('login command', () => {
       body: {
         code: 'code_123',
         state: 'state_123',
-        redirect_uri: 'http://127.0.0.1:45231/callback',
+        redirect_uri: 'http://localhost:45231/callback',
         code_verifier: 'verifier_123',
       },
     });
@@ -158,7 +158,7 @@ describe('login command', () => {
 
     const close = vi.fn(async () => undefined);
     const startCallbackServer = vi.fn(async () => ({
-      redirectUri: 'http://127.0.0.1:45231/callback',
+      redirectUri: 'http://localhost:45231/callback',
       waitForCallback: async () => ({
         code: 'code_123',
         state: 'state_123',
@@ -205,7 +205,7 @@ describe('login command', () => {
       });
     const close = vi.fn(async () => undefined);
     const startCallbackServer = vi.fn(async () => ({
-      redirectUri: 'http://127.0.0.1:45231/callback',
+      redirectUri: 'http://localhost:45231/callback',
       waitForCallback,
       close,
     }));

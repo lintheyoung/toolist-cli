@@ -18,7 +18,7 @@ function sendText(response: ServerResponse, statusCode: number, body: string): v
 }
 
 function buildRequestUrl(request: IncomingMessage): URL {
-  return new URL(request.url ?? '/', 'http://127.0.0.1');
+  return new URL(request.url ?? '/', 'http://localhost');
 }
 
 export async function startCallbackServer(expectedState: string): Promise<CallbackServer> {
@@ -77,7 +77,7 @@ export async function startCallbackServer(expectedState: string): Promise<Callba
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, 'localhost', () => {
       server.off('error', reject);
       resolve();
     });
@@ -89,7 +89,7 @@ export async function startCallbackServer(expectedState: string): Promise<Callba
     throw new Error('Callback server failed to bind to a port.');
   }
 
-  const redirectUri = `http://127.0.0.1:${address.port}/callback`;
+  const redirectUri = `http://localhost:${address.port}/callback`;
 
   return {
     redirectUri,
