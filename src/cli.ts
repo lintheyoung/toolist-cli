@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
@@ -2700,9 +2701,22 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   return 1;
 }
 
-const isDirectExecution = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+export function isDirectExecution(
+  argvEntry = process.argv[1],
+  moduleEntry = fileURLToPath(import.meta.url)
+): boolean {
+  if (!argvEntry) {
+    return false;
+  }
 
-if (isDirectExecution) {
+  try {
+    return realpathSync(resolve(argvEntry)) === realpathSync(moduleEntry);
+  } catch {
+    return resolve(argvEntry) === resolve(moduleEntry);
+  }
+}
+
+if (isDirectExecution()) {
   void main().then((exitCode) => {
     process.exitCode = exitCode;
   });

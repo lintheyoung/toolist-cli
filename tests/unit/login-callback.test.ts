@@ -25,6 +25,37 @@ describe('login callback flow', () => {
     await server.close();
   });
 
+  it('can continue waiting after an invalid-state callback and resolve on the next valid callback', async () => {
+    const { startCallbackServer } = await import('../../src/lib/callback-server.js');
+
+    const server = await startCallbackServer('expected_state');
+    const invalidUrl = new URL(server.redirectUri);
+    invalidUrl.searchParams.set('code', 'bad_code');
+    invalidUrl.searchParams.set('state', 'wrong_state');
+
+    const validUrl = new URL(server.redirectUri);
+    validUrl.searchParams.set('code', 'cli_code_456');
+    validUrl.searchParams.set('state', 'expected_state');
+
+    const firstWait = server.waitForCallback();
+    const firstRejection = expect(firstWait).rejects.toThrow('Invalid callback state.');
+    const invalidResponse = await fetch(invalidUrl);
+    await firstRejection;
+    expect(invalidResponse.status).toBe(400);
+
+    const secondWait = server.waitForCallback();
+    const validResponse = await fetch(validUrl);
+    const result = await secondWait;
+
+    expect(validResponse.status).toBe(200);
+    expect(result).toEqual({
+      code: 'cli_code_456',
+      state: 'expected_state',
+    });
+
+    await server.close();
+  });
+
   it('rejects a callback with the wrong state nonce', async () => {
     const { startCallbackServer } = await import('../../src/lib/callback-server.js');
 

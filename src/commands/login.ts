@@ -34,6 +34,13 @@ export interface LoginDependencies {
   createCodeChallenge: (codeVerifier: string) => string;
 }
 
+function isInvalidCliAuthCodeError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.trim() === 'A valid CLI auth code is required.'
+  );
+}
+
 type LoginExchangeResponse = {
   data: {
     access_token: string;
@@ -105,18 +112,32 @@ export async function loginCommand(
 
     await deps.openBrowser(startUrl.toString());
 
-    const callback = await waitForCallback();
-    const exchangeEnvelope = await deps.apiRequest<LoginExchangeResponse>({
-      baseUrl: args.baseUrl,
-      method: 'POST',
-      path: '/api/cli/auth/exchange',
-      body: {
-        code: callback.code,
-        state: callback.state,
-        redirect_uri: redirectUri,
-        code_verifier: codeVerifier,
-      },
-    });
+    let exchangeEnvelope: LoginExchangeResponse | null = null;
+
+    while (!exchangeEnvelope) {
+      const callback = await waitForCallback();
+
+      try {
+        exchangeEnvelope = await deps.apiRequest<LoginExchangeResponse>({
+          baseUrl: args.baseUrl,
+          method: 'POST',
+          path: '/api/cli/auth/exchange',
+          body: {
+            code: callback.code,
+            state: callback.state,
+            redirect_uri: redirectUri,
+            code_verifier: codeVerifier,
+          },
+        });
+      } catch (error) {
+        if (isInvalidCliAuthCodeError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
     const exchange: LoginExchangePayload = exchangeEnvelope.data;
 
     const baseUrl = exchange.base_url ?? args.baseUrl;

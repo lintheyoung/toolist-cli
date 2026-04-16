@@ -182,4 +182,75 @@ describe('login command', () => {
 
     expect(close).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps waiting for a later callback when the first exchanged auth code is invalid', async () => {
+    const { loginCommand } = await import('../../src/commands/login.js');
+
+    const openBrowser = vi.fn(async () => undefined);
+    const saveConfig = vi.fn(async () => undefined);
+    const waitForCallback = vi
+      .fn()
+      .mockResolvedValueOnce({
+        code: 'bad_code',
+        state: 'state_123',
+      })
+      .mockResolvedValueOnce({
+        code: 'good_code',
+        state: 'state_123',
+      });
+    const close = vi.fn(async () => undefined);
+    const startCallbackServer = vi.fn(async () => ({
+      redirectUri: 'http://127.0.0.1:45231/callback',
+      waitForCallback,
+      close,
+    }));
+    const apiRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('A valid CLI auth code is required.'))
+      .mockResolvedValueOnce({
+        data: {
+          access_token: 'tgc_cli_secret',
+          token_type: 'Bearer',
+          expires_at: '2026-04-13T00:00:00.000Z',
+          workspace_id: 77,
+          workspace_name: 'Acme',
+          user_id: 11,
+          user_email: 'agent@example.com',
+          base_url: 'https://api.example.com',
+          scopes: ['workspace:read', 'tools:read'],
+        },
+        request_id: 'req_login_456',
+      });
+
+    const result = await loginCommand(
+      {
+        baseUrl: 'https://api.example.com',
+      },
+      {
+        openBrowser,
+        saveConfig,
+        startCallbackServer,
+        apiRequest,
+        randomUUID: () => 'state_123',
+        createCodeVerifier: () => 'verifier_123',
+        createCodeChallenge: () => 'challenge_123',
+      },
+    );
+
+    expect(waitForCallback).toHaveBeenCalledTimes(2);
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      baseUrl: 'https://api.example.com',
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      expiresAt: '2026-04-13T00:00:00.000Z',
+    });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 });

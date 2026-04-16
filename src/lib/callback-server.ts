@@ -22,15 +22,31 @@ function buildRequestUrl(request: IncomingMessage): URL {
 }
 
 export async function startCallbackServer(expectedState: string): Promise<CallbackServer> {
-  let resolveCallback!: (result: CallbackResult) => void;
-  let rejectCallback!: (error: Error) => void;
-  let settled = false;
+  const pendingResults: CallbackResult[] = [];
+  const waiters: Array<{
+    resolve: (result: CallbackResult) => void;
+    reject: (error: Error) => void;
+  }> = [];
   let waitRequested = false;
 
-  const waitForCallback = new Promise<CallbackResult>((resolve, reject) => {
-    resolveCallback = resolve;
-    rejectCallback = reject;
-  });
+  function rejectNextWaiter(error: Error) {
+    const waiter = waiters.shift();
+    if (!waiter) {
+      return;
+    }
+
+    waiter.reject(error);
+  }
+
+  function resolveNextWaiter(result: CallbackResult) {
+    const waiter = waiters.shift();
+    if (!waiter) {
+      pendingResults.push(result);
+      return;
+    }
+
+    waiter.resolve(result);
+  }
 
   const server = createServer((request, response) => {
     const requestUrl = buildRequestUrl(request);
@@ -44,30 +60,18 @@ export async function startCallbackServer(expectedState: string): Promise<Callba
     const state = requestUrl.searchParams.get('state');
 
     if (!code || !state) {
-      if (!settled) {
-        settled = true;
-        rejectCallback(new Error('Missing callback code or state.'));
-      }
-
+      rejectNextWaiter(new Error('Missing callback code or state.'));
       sendText(response, 400, 'Missing code or state');
       return;
     }
 
     if (state !== expectedState) {
-      if (!settled) {
-        settled = true;
-        rejectCallback(new Error('Invalid callback state.'));
-      }
-
+      rejectNextWaiter(new Error('Invalid callback state.'));
       sendText(response, 400, 'Invalid callback state');
       return;
     }
 
-    if (!settled) {
-      settled = true;
-      resolveCallback({ code, state });
-    }
-
+    resolveNextWaiter({ code, state });
     sendText(response, 200, 'Login complete. You can close this tab.');
   });
 
@@ -91,12 +95,22 @@ export async function startCallbackServer(expectedState: string): Promise<Callba
     redirectUri,
     waitForCallback: () => {
       waitRequested = true;
-      return waitForCallback;
+
+      if (pendingResults.length > 0) {
+        return Promise.resolve(pendingResults.shift() as CallbackResult);
+      }
+
+      return new Promise<CallbackResult>((resolve, reject) => {
+        waiters.push({ resolve, reject });
+      });
     },
     close: async () => {
-      if (waitRequested && !settled) {
-        settled = true;
-        rejectCallback(new Error('Callback server closed before receiving a callback.'));
+      if (waitRequested && waiters.length > 0) {
+        for (const waiter of waiters.splice(0)) {
+          waiter.reject(
+            new Error('Callback server closed before receiving a callback.')
+          );
+        }
       }
 
       await new Promise<void>((resolve, reject) => {
