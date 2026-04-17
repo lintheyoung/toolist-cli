@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   vi.resetModules();
   vi.doUnmock('../../src/commands/whoami.js');
 });
@@ -166,6 +167,105 @@ describe('whoami command', () => {
 
     expect(apiRequest).toHaveBeenCalledWith({
       baseUrl: 'https://self-hosted.example.com',
+      token: 'tgc_cli_secret',
+      method: 'GET',
+      path: '/api/cli/me',
+    });
+  });
+
+  it('uses the canonical hosted base URL for an explicit env even if that slot stores a self-hosted URL', async () => {
+    const { whoamiCommand } = await import('../../src/commands/whoami.js');
+
+    const loadConfig = vi.fn(async () => ({
+      activeEnvironment: 'prod' as const,
+      profiles: {
+        prod: {
+          environment: 'prod' as const,
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        user: {
+          id: 11,
+          email: 'agent@example.com',
+        },
+        workspace: {
+          id: 77,
+          name: 'Acme',
+        },
+        scopes: ['workspace:read', 'tools:read'],
+        active_job_count: 2,
+        max_concurrent_jobs: 5,
+      },
+      request_id: 'req_whoami_prod',
+    }));
+
+    await whoamiCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+        env: 'prod',
+      },
+      {
+        loadConfig,
+        apiRequest,
+      },
+    );
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://tooli.st',
+      token: 'tgc_cli_secret',
+      method: 'GET',
+      path: '/api/cli/me',
+    });
+  });
+
+  it('uses the canonical hosted base URL for TOOLIST_ENV even if that slot stores a self-hosted URL', async () => {
+    const { whoamiCommand } = await import('../../src/commands/whoami.js');
+
+    vi.stubEnv('TOOLIST_ENV', 'prod');
+
+    const loadConfig = vi.fn(async () => ({
+      activeEnvironment: 'test' as const,
+      profiles: {
+        prod: {
+          environment: 'prod' as const,
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        user: {
+          id: 11,
+          email: 'agent@example.com',
+        },
+        workspace: {
+          id: 77,
+          name: 'Acme',
+        },
+        scopes: ['workspace:read', 'tools:read'],
+        active_job_count: 2,
+        max_concurrent_jobs: 5,
+      },
+      request_id: 'req_whoami_prod_envvar',
+    }));
+
+    await whoamiCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        loadConfig,
+        apiRequest,
+      },
+    );
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://tooli.st',
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',

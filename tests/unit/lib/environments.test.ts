@@ -4,7 +4,9 @@ import {
   DEFAULT_ENVIRONMENT,
   inferEnvironmentFromBaseUrl,
   resolveEnvironmentBaseUrl,
+  resolveEnvironmentSelection,
   resolveEnvironmentName,
+  resolveSelectedProfileBaseUrl,
 } from '../../../src/lib/environments.js';
 
 describe('CLI environments', () => {
@@ -30,5 +32,37 @@ describe('CLI environments', () => {
 
   it('rejects unknown environments', () => {
     expect(() => resolveEnvironmentName('qa')).toThrow(/Unknown environment/);
+  });
+
+  it('treats --env and TOOLIST_ENV as explicit hosted selections', () => {
+    expect(resolveEnvironmentSelection({
+      requestedEnvironment: 'test',
+      configuredEnvironment: 'prod',
+    })).toEqual({
+      environment: 'test',
+      isExplicitHostedSelection: true,
+    });
+
+    expect(resolveEnvironmentSelection({
+      configuredEnvironment: 'prod',
+      environmentVariable: 'dev',
+    })).toEqual({
+      environment: 'dev',
+      isExplicitHostedSelection: true,
+    });
+  });
+
+  it('preserves stored base URLs only for implicit environment selection', () => {
+    expect(resolveSelectedProfileBaseUrl({
+      environment: 'prod',
+      profileBaseUrl: 'https://self-hosted.example.com',
+      isExplicitHostedSelection: true,
+    })).toBe('https://tooli.st');
+
+    expect(resolveSelectedProfileBaseUrl({
+      environment: 'prod',
+      profileBaseUrl: 'https://self-hosted.example.com',
+      isExplicitHostedSelection: false,
+    })).toBe('https://self-hosted.example.com');
   });
 });

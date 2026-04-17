@@ -1,5 +1,10 @@
 export type ToolistEnvironment = 'prod' | 'test' | 'dev';
 
+export interface ResolvedEnvironmentSelection {
+  environment: ToolistEnvironment;
+  isExplicitHostedSelection: boolean;
+}
+
 export const DEFAULT_ENVIRONMENT: ToolistEnvironment = 'prod';
 
 const ENVIRONMENT_BASE_URLS: Record<ToolistEnvironment, string> = {
@@ -26,6 +31,43 @@ export function resolveEnvironmentBaseUrl(
   env: ToolistEnvironment,
 ): string {
   return ENVIRONMENT_BASE_URLS[env];
+}
+
+export function resolveEnvironmentSelection(args: {
+  requestedEnvironment?: ToolistEnvironment;
+  configuredEnvironment?: ToolistEnvironment;
+  environmentVariable?: string | undefined;
+}): ResolvedEnvironmentSelection {
+  if (args.requestedEnvironment) {
+    return {
+      environment: args.requestedEnvironment,
+      isExplicitHostedSelection: true,
+    };
+  }
+
+  if (args.environmentVariable) {
+    return {
+      environment: resolveEnvironmentName(args.environmentVariable),
+      isExplicitHostedSelection: true,
+    };
+  }
+
+  return {
+    environment: args.configuredEnvironment ?? DEFAULT_ENVIRONMENT,
+    isExplicitHostedSelection: false,
+  };
+}
+
+export function resolveSelectedProfileBaseUrl(args: {
+  environment: ToolistEnvironment;
+  profileBaseUrl?: string | undefined;
+  isExplicitHostedSelection: boolean;
+}): string {
+  if (args.isExplicitHostedSelection) {
+    return resolveEnvironmentBaseUrl(args.environment);
+  }
+
+  return args.profileBaseUrl ?? resolveEnvironmentBaseUrl(args.environment);
 }
 
 export function inferEnvironmentFromBaseUrl(

@@ -7,7 +7,7 @@ import {
 } from '../lib/config.js';
 import {
   DEFAULT_ENVIRONMENT,
-  resolveEnvironmentName,
+  resolveEnvironmentSelection,
   type ToolistEnvironment,
 } from '../lib/environments.js';
 
@@ -32,21 +32,6 @@ function createDefaultDependencies(): LogoutDependencies {
     loadConfig,
     saveConfig,
   };
-}
-
-function resolveSelectedEnvironment(
-  requestedEnvironment: ToolistEnvironment | undefined,
-  config: ToollistConfig | null,
-): ToolistEnvironment {
-  if (requestedEnvironment) {
-    return requestedEnvironment;
-  }
-
-  if (process.env.TOOLIST_ENV) {
-    return resolveEnvironmentName(process.env.TOOLIST_ENV);
-  }
-
-  return config?.activeEnvironment ?? DEFAULT_ENVIRONMENT;
 }
 
 function getNextActiveEnvironment(
@@ -82,7 +67,11 @@ export async function logoutCommand(
     };
   }
 
-  const environment = resolveSelectedEnvironment(args.env, config);
+  const environment = resolveEnvironmentSelection({
+    requestedEnvironment: args.env,
+    configuredEnvironment: config?.activeEnvironment,
+    environmentVariable: process.env.TOOLIST_ENV,
+  }).environment;
   if (!getProfileForEnvironment(config, environment)) {
     return {
       loggedOut: true,

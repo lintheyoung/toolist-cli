@@ -6,9 +6,8 @@ import {
   type ToollistProfile,
 } from '../lib/config.js';
 import {
-  DEFAULT_ENVIRONMENT,
-  resolveEnvironmentBaseUrl,
-  resolveEnvironmentName,
+  resolveEnvironmentSelection,
+  resolveSelectedProfileBaseUrl,
   type ToolistEnvironment,
 } from '../lib/environments.js';
 
@@ -48,21 +47,6 @@ function createDefaultDependencies(): WhoamiDependencies {
   };
 }
 
-function resolveSelectedEnvironment(
-  requestedEnvironment: ToolistEnvironment | undefined,
-  config: ToollistConfig | null,
-): ToolistEnvironment {
-  if (requestedEnvironment) {
-    return requestedEnvironment;
-  }
-
-  if (process.env.TOOLIST_ENV) {
-    return resolveEnvironmentName(process.env.TOOLIST_ENV);
-  }
-
-  return config?.activeEnvironment ?? DEFAULT_ENVIRONMENT;
-}
-
 function getRequiredProfile(
   profile: ToollistProfile | null,
 ): ToollistProfile {
@@ -82,11 +66,20 @@ export async function whoamiCommand(
     ...dependencies,
   };
   const config = await deps.loadConfig(args.configPath);
-  const environment = resolveSelectedEnvironment(args.env, config);
+  const selection = resolveEnvironmentSelection({
+    requestedEnvironment: args.env,
+    configuredEnvironment: config?.activeEnvironment,
+    environmentVariable: process.env.TOOLIST_ENV,
+  });
+  const environment = selection.environment;
   const selectedProfile = getProfileForEnvironment(config, environment);
   const profile = getRequiredProfile(selectedProfile);
   const response = await deps.apiRequest<WhoamiResponse>({
-    baseUrl: profile.baseUrl ?? resolveEnvironmentBaseUrl(environment),
+    baseUrl: resolveSelectedProfileBaseUrl({
+      environment,
+      profileBaseUrl: profile.baseUrl,
+      isExplicitHostedSelection: selection.isExplicitHostedSelection,
+    }),
     token: profile.accessToken,
     method: 'GET',
     path: '/api/cli/me',
