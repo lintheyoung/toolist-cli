@@ -2412,16 +2412,22 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   if (command === 'login') {
     try {
       const loginArgs = parseLoginArgs(rest);
-      const config = await loadConfig(loginArgs.configPath);
-      const selection = resolveEnvironmentSelection({
-        requestedEnvironment: loginArgs.env,
-        configuredEnvironment: config?.activeEnvironment,
-        environmentVariable: process.env.TOOLIST_ENV,
-      });
-      const inferredEnvironment = selection.environment;
+      let inferredEnvironment: ToolistEnvironment | undefined;
+
+      if (!loginArgs.baseUrl) {
+        const config = await loadConfig(loginArgs.configPath);
+        const selection = resolveEnvironmentSelection({
+          requestedEnvironment: loginArgs.env,
+          configuredEnvironment: config?.activeEnvironment,
+          environmentVariable: process.env.TOOLIST_ENV,
+        });
+        inferredEnvironment = selection.environment;
+      }
+      const loginBaseUrl = loginArgs.baseUrl
+        ?? resolveEnvironmentBaseUrl(inferredEnvironment ?? DEFAULT_ENVIRONMENT);
+
       const result = await loginCommand({
-        baseUrl: loginArgs.baseUrl
-          ?? resolveEnvironmentBaseUrl(inferredEnvironment),
+        baseUrl: loginBaseUrl,
         environment: inferredEnvironment,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
