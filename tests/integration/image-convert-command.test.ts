@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { resolveEnvironmentBaseUrl } from '../../src/lib/environments.js';
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
@@ -103,6 +105,81 @@ describe('image convert command', () => {
       }),
     });
     expect(result.stderr).toBe('');
+  });
+
+  it('accepts --env and forwards the resolved hosted base URL for image convert', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_123',
+          status: 'queued',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/photo.jpg',
+      '--to',
+      'webp',
+      '--env',
+      'test',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(uploadCommand).toHaveBeenCalledWith({
+      input: '/tmp/photo.jpg',
+      baseUrl: resolveEnvironmentBaseUrl('test'),
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+    });
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: resolveEnvironmentBaseUrl('test'),
+      token: 'tgc_cli_secret',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      body: expect.objectContaining({
+        tool_name: 'image.convert_format',
+        input: {
+          input_file_id: 'file_source_123',
+          target_mime_type: 'image/webp',
+        },
+      }),
+    });
   });
 
   it('dispatches image convert through the CLI, waits for completion, downloads the output, and prints the final job payload', async () => {

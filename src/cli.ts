@@ -157,14 +157,14 @@ export function getImageHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
+    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
@@ -647,6 +647,7 @@ function parseImageConvertArgs(args: string[]): {
   timeoutSeconds?: number;
   output?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -659,6 +660,7 @@ function parseImageConvertArgs(args: string[]): {
     timeoutSeconds?: number;
     output?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {
@@ -679,6 +681,17 @@ function parseImageConvertArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -791,6 +804,7 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
   timeoutSeconds?: number;
   output?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -800,6 +814,7 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
     timeoutSeconds?: number;
     output?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {
@@ -820,6 +835,17 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -1062,6 +1088,7 @@ function parseImageResizeArgs(args: string[]): {
   timeoutSeconds?: number;
   output?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -1076,6 +1103,7 @@ function parseImageResizeArgs(args: string[]): {
     timeoutSeconds?: number;
     output?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {
@@ -1096,6 +1124,17 @@ function parseImageResizeArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -1881,6 +1920,7 @@ function parseImageCropArgs(args: string[]): {
   timeoutSeconds?: number;
   output?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -1897,6 +1937,7 @@ function parseImageCropArgs(args: string[]): {
     timeoutSeconds?: number;
     output?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {
@@ -1917,6 +1958,17 @@ function parseImageCropArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2423,7 +2475,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           return 1;
         }
 
-        if (!parsed.baseUrl) {
+        if (!parsed.baseUrl && !parsed.env) {
           const manifest = await readBatchManifest(parsed.manifestPath);
           if (manifest.defaults?.base_url) {
             parsed.baseUrl = manifest.defaults.base_url;

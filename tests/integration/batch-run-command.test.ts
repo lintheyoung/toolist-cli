@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { runBatchItem } from '../../src/lib/batch-item-runner.js';
 import type { BatchState } from '../../src/lib/batch-state.js';
+import { resolveEnvironmentBaseUrl } from '../../src/lib/environments.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -148,6 +149,73 @@ describe('batch run command', () => {
     expect(output.summary.failed).toBe(0);
     expect(output.summary.skipped).toBe(0);
     expect(output.items).toHaveLength(2);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('prefers --env over a manifest defaults.base_url when resolving credentials', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-batch-cli-'));
+    const manifestPath = join(tempDir, 'batch.json');
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        version: 1,
+        defaults: {
+          base_url: 'https://manifest.example.com',
+        },
+        items: [],
+      }),
+      'utf8',
+    );
+
+    const runBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 0,
+        succeeded: 0,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+
+    vi.doMock('../../src/commands/batch/run.js', () => ({
+      runBatchCommand,
+    }));
+    vi.doMock('../../src/lib/batch-manifest.js', () => ({
+      readBatchManifest: vi.fn(async () => ({
+        version: 1,
+        defaults: {
+          base_url: 'https://manifest.example.com',
+        },
+        items: [],
+      })),
+    }));
+
+    const result = await runCli([
+      'batch',
+      'run',
+      '--manifest',
+      manifestPath,
+      '--env',
+      'test',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(runBatchCommand).toHaveBeenCalledWith({
+      manifestPath,
+      resume: false,
+      concurrency: undefined,
+      outputDir: undefined,
+      baseUrl: resolveEnvironmentBaseUrl('test'),
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+    });
 
     await rm(tempDir, { recursive: true, force: true });
   });
