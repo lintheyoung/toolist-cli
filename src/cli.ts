@@ -945,6 +945,9 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
     }
 
     if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
       parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;

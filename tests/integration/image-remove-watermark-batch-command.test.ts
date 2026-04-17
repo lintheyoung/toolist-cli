@@ -426,6 +426,19 @@ describe('image remove-watermark-batch command', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('fails when --env is missing a value', async () => {
+    const result = await runCli([
+      'image',
+      'remove-watermark-batch',
+      '--inputs',
+      './a.jpg',
+      '--env',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Missing value for option: --env');
+  });
+
   it('only cleans up temp directories it created itself', async () => {
     const waitJobCommand = vi.fn(async () => ({
       id: 'job_watermark_batch_cleanup',
