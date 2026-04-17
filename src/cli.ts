@@ -137,7 +137,7 @@ export function getFilesHelp(): string {
     'toollist files',
     '',
     'Usage:',
-    '  toollist files upload --input <path> [--sha256] [--public]',
+    '  toollist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]',
     '',
     `Defaults to ${DEFAULT_BASE_URL}.`,
     '',
@@ -291,8 +291,8 @@ export function getJobsHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist jobs get <jobId>',
-    '  toollist jobs wait <jobId> --timeout 120',
+    '  toollist jobs get <jobId> [--env <prod|test|dev>]',
+    '  toollist jobs wait <jobId> --timeout 120 [--env <prod|test|dev>]',
     '',
     'Commands:',
     '  get     Fetch a job by id',
@@ -307,7 +307,7 @@ export function getBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  run     Run a manifest-driven batch',
@@ -532,6 +532,7 @@ function parseApiArgs(args: string[], strict = false): SharedApiArgs {
 function parseUploadArgs(args: string[]): {
   input?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
   computeSha256?: boolean;
@@ -540,6 +541,7 @@ function parseUploadArgs(args: string[]): {
   const parsed: {
     input?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
     computeSha256?: boolean;
@@ -560,6 +562,17 @@ function parseUploadArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2018,6 +2031,7 @@ function parseJobArgs(args: string[]): {
   jobId?: string;
   timeoutSeconds?: number;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -2025,6 +2039,7 @@ function parseJobArgs(args: string[]): {
     jobId?: string;
     timeoutSeconds?: number;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {};
@@ -2043,6 +2058,17 @@ function parseJobArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2112,6 +2138,7 @@ function parseBatchRunArgs(args: string[]): {
   concurrency?: number;
   outputDir?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -2121,6 +2148,7 @@ function parseBatchRunArgs(args: string[]): {
     concurrency?: number;
     outputDir?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {};
@@ -2180,6 +2208,17 @@ function parseBatchRunArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
