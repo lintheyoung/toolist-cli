@@ -1,10 +1,8 @@
 import { apiRequest } from '../lib/http.js';
 import {
-  getActiveProfile,
   getProfileForEnvironment,
   loadConfig,
   type ToollistConfig,
-  type ToollistActiveProfile,
   type ToollistProfile,
 } from '../lib/config.js';
 import {
@@ -66,8 +64,8 @@ function resolveSelectedEnvironment(
 }
 
 function getRequiredProfile(
-  profile: ToollistActiveProfile | ToollistProfile | null,
-): ToollistActiveProfile | ToollistProfile {
+  profile: ToollistProfile | null,
+): ToollistProfile {
   if (!profile?.accessToken) {
     throw new Error('No saved login found. Run `toollist login` first.');
   }
@@ -85,9 +83,7 @@ export async function whoamiCommand(
   };
   const config = await deps.loadConfig(args.configPath);
   const environment = resolveSelectedEnvironment(args.env, config);
-  const selectedProfile = args.env || process.env.TOOLIST_ENV
-    ? getProfileForEnvironment(config, environment)
-    : getActiveProfile(config) ?? getProfileForEnvironment(config, environment);
+  const selectedProfile = getProfileForEnvironment(config, environment);
   const profile = getRequiredProfile(selectedProfile);
   const response = await deps.apiRequest<WhoamiResponse>({
     baseUrl: profile.baseUrl ?? resolveEnvironmentBaseUrl(environment),

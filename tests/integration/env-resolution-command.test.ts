@@ -163,7 +163,7 @@ describe('CLI environment resolution', () => {
     }
   });
 
-  it('migrates a legacy self-hosted config into an active custom profile', async () => {
+  it('migrates a legacy self-hosted config into the active environment slot', async () => {
     const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
     const configPath = join(configDir, 'config.json');
 
@@ -175,11 +175,13 @@ describe('CLI environment resolution', () => {
 
       expect(await loadConfig(configPath)).toEqual({
         activeEnvironment: 'prod',
-        activeProfile: {
-          baseUrl: 'https://self-hosted.example.com',
-          accessToken: 'legacy-self-hosted-token',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://self-hosted.example.com',
+            accessToken: 'legacy-self-hosted-token',
+          },
         },
-        profiles: {},
       });
 
       const apiRequest = vi.fn(async () => ({

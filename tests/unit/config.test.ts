@@ -130,7 +130,7 @@ describe('config storage', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('migrates a legacy self-hosted config into a readable active profile', async () => {
+  it('migrates a legacy self-hosted config into the active environment slot', async () => {
     const { loadConfig } = await import('../../src/lib/config.js');
     const configDir = await mkdtemp(join(tmpdir(), 'toollist-config-legacy-'));
     const configPath = join(configDir, 'config.json');
@@ -142,11 +142,13 @@ describe('config storage', () => {
 
     expect(await loadConfig(configPath)).toEqual({
       activeEnvironment: 'prod',
-      activeProfile: {
-        baseUrl: 'https://self-hosted.example.com',
-        accessToken: 'tgc_cli_secret',
+      profiles: {
+        prod: {
+          environment: 'prod',
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
       },
-      profiles: {},
     });
 
     await rm(configDir, { recursive: true, force: true });

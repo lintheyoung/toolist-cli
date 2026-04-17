@@ -74,16 +74,18 @@ describe('logout command', () => {
     });
   });
 
-  it('clears an active self-hosted profile when no env is specified', async () => {
+  it('clears a self-hosted login stored in the active environment slot when no env is specified', async () => {
     const { logoutCommand } = await import('../../src/commands/logout.js');
 
     const loadConfig = vi.fn(async () => ({
       activeEnvironment: 'prod' as const,
-      activeProfile: {
-        baseUrl: 'https://self-hosted.example.com',
-        accessToken: 'tgc_cli_secret',
+      profiles: {
+        prod: {
+          environment: 'prod' as const,
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
       },
-      profiles: {},
     }));
     const clearConfig = vi.fn(async () => undefined);
 

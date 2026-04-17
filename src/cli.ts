@@ -20,7 +20,7 @@ import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
-import { getActiveProfile, getProfileForEnvironment, loadConfig } from './lib/config.js';
+import { getProfileForEnvironment, loadConfig } from './lib/config.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -2387,17 +2387,6 @@ async function resolveApiCredentials(args: {
   }
 
   const config = await loadConfig(args.configPath);
-  const activeProfile = !args.baseUrl && !args.env && !process.env.TOOLIST_ENV
-    ? getActiveProfile(config)
-    : null;
-
-  if (activeProfile && (activeProfile.accessToken || args.token)) {
-    return {
-      baseUrl: activeProfile.baseUrl,
-      token: args.token ?? activeProfile.accessToken!,
-    };
-  }
-
   const environment = args.env
     ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
     ?? config?.activeEnvironment

@@ -124,16 +124,18 @@ describe('whoami command', () => {
     });
   });
 
-  it('uses the active self-hosted profile when no env is specified', async () => {
+  it('uses a self-hosted login stored in the active environment slot when no env is specified', async () => {
     const { whoamiCommand } = await import('../../src/commands/whoami.js');
 
     const loadConfig = vi.fn(async () => ({
       activeEnvironment: 'prod' as const,
-      activeProfile: {
-        baseUrl: 'https://self-hosted.example.com',
-        accessToken: 'tgc_cli_secret',
+      profiles: {
+        prod: {
+          environment: 'prod' as const,
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
       },
-      profiles: {},
     }));
     const apiRequest = vi.fn(async () => ({
       data: {

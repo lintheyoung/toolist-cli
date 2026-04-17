@@ -237,7 +237,7 @@ describe('login command', () => {
     });
   });
 
-  it('stores self-hosted logins as the active custom profile instead of forcing a hosted env slot', async () => {
+  it('stores self-hosted logins in the active environment slot instead of adding a separate profile field', async () => {
     const { loginCommand } = await import('../../src/commands/login.js');
 
     const saveConfig = vi.fn(async () => undefined);
@@ -284,11 +284,13 @@ describe('login command', () => {
     expect(saveConfig).toHaveBeenCalledWith(
       {
         activeEnvironment: 'prod',
-        activeProfile: {
-          baseUrl: 'https://self-hosted.example.com',
-          accessToken: 'tgc_cli_secret',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://self-hosted.example.com',
+            accessToken: 'tgc_cli_secret',
+          },
         },
-        profiles: {},
       },
       '/tmp/toollist-config.json',
     );

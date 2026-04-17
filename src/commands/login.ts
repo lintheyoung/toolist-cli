@@ -3,7 +3,6 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { apiRequest } from '../lib/http.js';
 import { openBrowser } from '../lib/browser.js';
 import {
-  getActiveProfile,
   loadConfig,
   saveConfig,
   type ToollistConfig,
@@ -163,35 +162,19 @@ export async function loginCommand(
       activeEnvironment: DEFAULT_ENVIRONMENT,
       profiles: {},
     };
-    const environment = inferredEnvironment ?? args.environment;
-    const config: ToollistConfig = environment
-      ? {
-        ...existingConfig,
-        activeEnvironment: environment,
-        profiles: {
-          ...existingConfig.profiles,
-          [environment]: {
-            environment,
-            baseUrl,
-            accessToken: exchange.access_token,
-          },
-        },
-      }
-      : {
-        ...existingConfig,
-        activeEnvironment: existingConfig.activeEnvironment ?? DEFAULT_ENVIRONMENT,
-        activeProfile: {
+    const environment = inferredEnvironment ?? args.environment ?? existingConfig.activeEnvironment ?? DEFAULT_ENVIRONMENT;
+    const config: ToollistConfig = {
+      ...existingConfig,
+      activeEnvironment: environment,
+      profiles: {
+        ...existingConfig.profiles,
+        [environment]: {
+          environment,
           baseUrl,
           accessToken: exchange.access_token,
         },
-        profiles: {
-          ...existingConfig.profiles,
-        },
-      };
-
-    if (environment && getActiveProfile(config)) {
-      delete config.activeProfile;
-    }
+      },
+    };
 
     await deps.saveConfig(config, args.configPath);
 
