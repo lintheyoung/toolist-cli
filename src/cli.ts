@@ -21,6 +21,12 @@ import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { loadConfig } from './lib/config.js';
+import {
+  DEFAULT_ENVIRONMENT,
+  resolveEnvironmentBaseUrl,
+  resolveEnvironmentName,
+  type ToolistEnvironment,
+} from './lib/environments.js';
 
 export interface CliIO {
   stdout: (chunk: string) => void;
@@ -32,7 +38,8 @@ const defaultIO: CliIO = {
   stderr: (chunk) => process.stderr.write(chunk),
 };
 
-export const DEFAULT_BASE_URL = 'https://tooli.st';
+export const DEFAULT_BASE_URL = resolveEnvironmentBaseUrl(DEFAULT_ENVIRONMENT);
+const ENVIRONMENT_OPTION_HELP = '  --env          Target environment: prod | test | dev';
 
 function unknownOption(flag: string): never {
   throw new Error(`Unknown option: ${flag}`);
@@ -87,7 +94,7 @@ export function getRootHelp(): string {
     'toollist - agent-first CLI for the Toollist platform',
     '',
     `Default API base URL: ${DEFAULT_BASE_URL}`,
-    'Use --base-url only when targeting self-hosted, staging, or custom environments.',
+    'Use --env for hosted Toollist targets. Use --base-url only for self-hosted or custom environments.',
     '',
     'Usage:',
     '  toollist <command> [options]',
@@ -108,6 +115,7 @@ export function getRootHelp(): string {
     '',
     'Options:',
     '  -h, --help  Show help',
+    ENVIRONMENT_OPTION_HELP,
     '  --json      Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
@@ -189,6 +197,7 @@ export function getImageConvertBatchHelp(): string {
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -215,6 +224,7 @@ export function getImageResizeBatchHelp(): string {
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -237,6 +247,7 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     '  --timeout      Maximum wait time in seconds',
     '  --output       Download results.zip to a local path',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -266,6 +277,7 @@ export function getImageCropBatchHelp(): string {
     '  --output-dir   Directory for downloaded outputs',
     '  --resume       Resume a previous batch run if possible',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
@@ -304,11 +316,13 @@ export function getBatchHelp(): string {
 
 function parseLoginArgs(args: string[]): {
   baseUrl?: string;
+  env?: ToolistEnvironment;
   clientName?: string;
   configPath?: string;
 } {
   const parsed: {
     baseUrl?: string;
+    env?: ToolistEnvironment;
     clientName?: string;
     configPath?: string;
   } = {};
@@ -327,6 +341,17 @@ function parseLoginArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -370,9 +395,11 @@ function parseLoginArgs(args: string[]): {
 }
 
 function parseConfigPathArgs(args: string[]): {
+  env?: ToolistEnvironment;
   configPath?: string;
 } {
   const parsed: {
+    env?: ToolistEnvironment;
     configPath?: string;
   } = {};
 
@@ -396,6 +423,17 @@ function parseConfigPathArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--json') {
       continue;
     }
@@ -410,16 +448,15 @@ function parseConfigPathArgs(args: string[]): {
   return parsed;
 }
 
-function parseApiArgs(args: string[], strict = false): {
+type SharedApiArgs = {
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
-} {
-  const parsed: {
-    baseUrl?: string;
-    token?: string;
-    configPath?: string;
-  } = {};
+};
+
+function parseApiArgs(args: string[], strict = false): SharedApiArgs {
+  const parsed: SharedApiArgs = {};
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -435,6 +472,17 @@ function parseApiArgs(args: string[], strict = false): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2178,15 +2226,19 @@ function parseBatchRunArgs(args: string[]): {
 
 async function resolveApiCredentials(args: {
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 }): Promise<{
   baseUrl: string;
   token: string;
 }> {
-  if (args.baseUrl && args.token) {
+  const requestedBaseUrl = args.baseUrl
+    ?? (args.env ? resolveEnvironmentBaseUrl(args.env) : undefined);
+
+  if (requestedBaseUrl && args.token) {
     return {
-      baseUrl: args.baseUrl,
+      baseUrl: requestedBaseUrl,
       token: args.token,
     };
   }
@@ -2198,7 +2250,7 @@ async function resolveApiCredentials(args: {
   }
 
   return {
-    baseUrl: args.baseUrl ?? config?.baseUrl ?? DEFAULT_BASE_URL,
+    baseUrl: requestedBaseUrl ?? config?.baseUrl ?? DEFAULT_BASE_URL,
     token: args.token ?? config!.accessToken!,
   };
 }
@@ -2215,7 +2267,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
     try {
       const loginArgs = parseLoginArgs(rest);
       const result = await loginCommand({
-        baseUrl: loginArgs.baseUrl ?? DEFAULT_BASE_URL,
+        baseUrl: loginArgs.baseUrl
+          ?? (loginArgs.env ? resolveEnvironmentBaseUrl(loginArgs.env) : DEFAULT_BASE_URL),
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
       }, {
