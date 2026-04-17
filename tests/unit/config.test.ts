@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -16,8 +16,14 @@ describe('config storage', () => {
     vi.stubEnv('XDG_CONFIG_HOME', configHome);
 
     const config = {
-      baseUrl: 'https://example.com',
-      accessToken: 'tgc_cli_secret',
+      activeEnvironment: 'prod' as const,
+      profiles: {
+        prod: {
+          environment: 'prod' as const,
+          baseUrl: 'https://tooli.st',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
     };
 
     await saveConfig(config);
@@ -37,8 +43,14 @@ describe('config storage', () => {
     vi.stubEnv('XDG_CONFIG_HOME', configHome);
 
     await saveConfig({
-      baseUrl: 'https://example.com',
-      accessToken: 'tgc_cli_secret',
+      activeEnvironment: 'prod',
+      profiles: {
+        prod: {
+          environment: 'prod',
+          baseUrl: 'https://tooli.st',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
     });
 
     await clearConfig();
@@ -68,8 +80,14 @@ describe('config storage', () => {
 
     await mockedSaveConfig(
       {
-        baseUrl: 'https://example.com',
-        accessToken: 'tgc_cli_secret',
+        activeEnvironment: 'prod',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://tooli.st',
+            accessToken: 'tgc_cli_secret',
+          },
+        },
       },
       join(tempDir, 'config.json'),
     );
@@ -94,8 +112,14 @@ describe('config storage', () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-config-perms-'));
     await saveConfig(
       {
-        baseUrl: 'https://example.com',
-        accessToken: 'tgc_cli_secret',
+        activeEnvironment: 'prod',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://tooli.st',
+            accessToken: 'tgc_cli_secret',
+          },
+        },
       },
       join(tempDir, 'config.json'),
     );
@@ -104,5 +128,27 @@ describe('config storage', () => {
     expect(fileStats.mode & 0o777).toBe(0o600);
 
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('migrates a legacy self-hosted config into a readable active profile', async () => {
+    const { loadConfig } = await import('../../src/lib/config.js');
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-config-legacy-'));
+    const configPath = join(configDir, 'config.json');
+
+    await writeFile(configPath, `${JSON.stringify({
+      baseUrl: 'https://self-hosted.example.com',
+      accessToken: 'tgc_cli_secret',
+    }, null, 2)}\n`);
+
+    expect(await loadConfig(configPath)).toEqual({
+      activeEnvironment: 'prod',
+      activeProfile: {
+        baseUrl: 'https://self-hosted.example.com',
+        accessToken: 'tgc_cli_secret',
+      },
+      profiles: {},
+    });
+
+    await rm(configDir, { recursive: true, force: true });
   });
 });

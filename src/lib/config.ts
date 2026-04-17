@@ -9,6 +9,11 @@ import {
   type ToolistEnvironment,
 } from './environments.js';
 
+export interface ToollistActiveProfile {
+  baseUrl: string;
+  accessToken?: string;
+}
+
 export interface ToollistProfile {
   environment: ToolistEnvironment;
   baseUrl: string;
@@ -17,6 +22,7 @@ export interface ToollistProfile {
 
 export interface ToollistConfig {
   activeEnvironment: ToolistEnvironment;
+  activeProfile?: ToollistActiveProfile;
   profiles: Partial<Record<ToolistEnvironment, ToollistProfile>>;
 }
 
@@ -38,17 +44,20 @@ function isEnvironment(value: unknown): value is ToolistEnvironment {
   return value === 'prod' || value === 'test' || value === 'dev';
 }
 
-function isProfile(value: unknown): value is ToollistProfile {
+function isActiveProfile(value: unknown): value is ToollistActiveProfile {
   return (
     typeof value === 'object' &&
     value !== null &&
-    isEnvironment((value as ToollistProfile).environment) &&
-    typeof (value as ToollistProfile).baseUrl === 'string' &&
+    typeof (value as ToollistActiveProfile).baseUrl === 'string' &&
     (
-      typeof (value as ToollistProfile).accessToken === 'undefined' ||
-      typeof (value as ToollistProfile).accessToken === 'string'
+      typeof (value as ToollistActiveProfile).accessToken === 'undefined' ||
+      typeof (value as ToollistActiveProfile).accessToken === 'string'
     )
   );
+}
+
+function isProfile(value: unknown): value is ToollistProfile {
+  return isActiveProfile(value) && isEnvironment((value as ToollistProfile).environment);
 }
 
 function migrateLegacyConfig(parsed: Record<string, unknown>): ToollistConfig | null {
@@ -56,12 +65,18 @@ function migrateLegacyConfig(parsed: Record<string, unknown>): ToollistConfig | 
     return null;
   }
 
+  const activeProfile: ToollistActiveProfile = {
+    baseUrl: parsed.baseUrl,
+    accessToken: typeof parsed.accessToken === 'string' ? parsed.accessToken : undefined,
+  };
   const environment = inferEnvironmentFromBaseUrl(parsed.baseUrl);
 
   if (!environment) {
-    throw new Error(
-      `Cannot migrate legacy config with unknown base URL: ${parsed.baseUrl}`,
-    );
+    return {
+      activeEnvironment: DEFAULT_ENVIRONMENT,
+      activeProfile,
+      profiles: {},
+    };
   }
 
   return {
@@ -69,8 +84,7 @@ function migrateLegacyConfig(parsed: Record<string, unknown>): ToollistConfig | 
     profiles: {
       [environment]: {
         environment,
-        baseUrl: parsed.baseUrl,
-        accessToken: typeof parsed.accessToken === 'string' ? parsed.accessToken : undefined,
+        ...activeProfile,
       },
     },
   };
@@ -90,6 +104,9 @@ function normalizeConfig(parsed: unknown): ToollistConfig | null {
 
   const profiles: Partial<Record<ToolistEnvironment, ToollistProfile>> = {};
   const rawProfiles = record.profiles;
+  const activeProfile = isActiveProfile(record.activeProfile)
+    ? record.activeProfile
+    : undefined;
 
   if (typeof rawProfiles === 'object' && rawProfiles !== null) {
     for (const environment of ['prod', 'test', 'dev'] as const) {
@@ -105,6 +122,7 @@ function normalizeConfig(parsed: unknown): ToollistConfig | null {
     activeEnvironment: isEnvironment(record.activeEnvironment)
       ? record.activeEnvironment
       : DEFAULT_ENVIRONMENT,
+    ...(activeProfile ? { activeProfile } : {}),
     profiles,
   };
 }
@@ -161,4 +179,10 @@ export function getProfileForEnvironment(
   environment: ToolistEnvironment,
 ): ToollistProfile | null {
   return config?.profiles?.[environment] ?? null;
+}
+
+export function getActiveProfile(
+  config: ToollistConfig | null,
+): ToollistActiveProfile | ToollistProfile | null {
+  return config?.activeProfile ?? null;
 }

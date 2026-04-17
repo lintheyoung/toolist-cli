@@ -45,8 +45,14 @@ describe('logout command', () => {
     const { logoutCommand } = await import('../../src/commands/logout.js');
 
     const loadConfig = vi.fn(async () => ({
-      baseUrl: 'https://test.tooli.st',
-      accessToken: 'tgc_cli_secret',
+      activeEnvironment: 'test' as const,
+      profiles: {
+        test: {
+          environment: 'test' as const,
+          baseUrl: 'https://test.tooli.st',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
     }));
     const clearConfig = vi.fn(async () => undefined);
 
@@ -62,6 +68,35 @@ describe('logout command', () => {
     );
 
     expect(loadConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
+    expect(clearConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
+    expect(result).toEqual({
+      loggedOut: true,
+    });
+  });
+
+  it('clears an active self-hosted profile when no env is specified', async () => {
+    const { logoutCommand } = await import('../../src/commands/logout.js');
+
+    const loadConfig = vi.fn(async () => ({
+      activeEnvironment: 'prod' as const,
+      activeProfile: {
+        baseUrl: 'https://self-hosted.example.com',
+        accessToken: 'tgc_cli_secret',
+      },
+      profiles: {},
+    }));
+    const clearConfig = vi.fn(async () => undefined);
+
+    const result = await logoutCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        loadConfig,
+        clearConfig,
+      },
+    );
+
     expect(clearConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
     expect(result).toEqual({
       loggedOut: true,

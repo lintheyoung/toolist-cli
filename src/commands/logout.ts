@@ -1,4 +1,5 @@
 import {
+  getActiveProfile,
   clearConfig,
   getProfileForEnvironment,
   loadConfig,
@@ -83,23 +84,32 @@ export async function logoutCommand(
   }
 
   const environment = resolveSelectedEnvironment(args.env, config);
+  const shouldClearActiveProfile = !args.env && !process.env.TOOLIST_ENV && !!getActiveProfile(config);
 
-  if (!getProfileForEnvironment(config, environment)) {
+  if (!shouldClearActiveProfile && !getProfileForEnvironment(config, environment)) {
     return {
       loggedOut: true,
     };
   }
 
   const profiles = { ...config.profiles };
-  delete profiles[environment];
+  if (!shouldClearActiveProfile) {
+    delete profiles[environment];
+  }
 
-  if (Object.keys(profiles).length === 0) {
+  const nextConfig: ToollistConfig = {
+    activeEnvironment: getNextActiveEnvironment(profiles, config.activeEnvironment),
+    profiles,
+  };
+
+  if (!shouldClearActiveProfile && getActiveProfile(config)) {
+    nextConfig.activeProfile = config.activeProfile;
+  }
+
+  if (Object.keys(profiles).length === 0 && !nextConfig.activeProfile) {
     await deps.clearConfig(args.configPath);
   } else {
-    await deps.saveConfig({
-      activeEnvironment: getNextActiveEnvironment(profiles, config.activeEnvironment),
-      profiles,
-    }, args.configPath);
+    await deps.saveConfig(nextConfig, args.configPath);
   }
 
   return {

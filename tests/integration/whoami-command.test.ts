@@ -65,8 +65,14 @@ describe('whoami command', () => {
     const { whoamiCommand } = await import('../../src/commands/whoami.js');
 
     const loadConfig = vi.fn(async () => ({
-      baseUrl: 'https://api.example.com',
-      accessToken: 'tgc_cli_secret',
+      activeEnvironment: 'dev' as const,
+      profiles: {
+        dev: {
+          environment: 'dev' as const,
+          baseUrl: 'http://localhost:3024',
+          accessToken: 'tgc_cli_secret',
+        },
+      },
     }));
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -115,6 +121,52 @@ describe('whoami command', () => {
       scopes: ['workspace:read', 'tools:read'],
       active_job_count: 2,
       max_concurrent_jobs: 5,
+    });
+  });
+
+  it('uses the active self-hosted profile when no env is specified', async () => {
+    const { whoamiCommand } = await import('../../src/commands/whoami.js');
+
+    const loadConfig = vi.fn(async () => ({
+      activeEnvironment: 'prod' as const,
+      activeProfile: {
+        baseUrl: 'https://self-hosted.example.com',
+        accessToken: 'tgc_cli_secret',
+      },
+      profiles: {},
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        user: {
+          id: 11,
+          email: 'agent@example.com',
+        },
+        workspace: {
+          id: 77,
+          name: 'Acme',
+        },
+        scopes: ['workspace:read', 'tools:read'],
+        active_job_count: 2,
+        max_concurrent_jobs: 5,
+      },
+      request_id: 'req_whoami_self_hosted',
+    }));
+
+    await whoamiCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        loadConfig,
+        apiRequest,
+      },
+    );
+
+    expect(apiRequest).toHaveBeenCalledWith({
+      baseUrl: 'https://self-hosted.example.com',
+      token: 'tgc_cli_secret',
+      method: 'GET',
+      path: '/api/cli/me',
     });
   });
 });

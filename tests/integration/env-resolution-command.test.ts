@@ -162,4 +162,61 @@ describe('CLI environment resolution', () => {
       await rm(configDir, { recursive: true, force: true });
     }
   });
+
+  it('migrates a legacy self-hosted config into an active custom profile', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
+    const configPath = join(configDir, 'config.json');
+
+    try {
+      await writeFile(configPath, JSON.stringify({
+        baseUrl: 'https://self-hosted.example.com',
+        accessToken: 'legacy-self-hosted-token',
+      }));
+
+      expect(await loadConfig(configPath)).toEqual({
+        activeEnvironment: 'prod',
+        activeProfile: {
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'legacy-self-hosted-token',
+        },
+        profiles: {},
+      });
+
+      const apiRequest = vi.fn(async () => ({
+        data: {
+          user: {
+            id: 11,
+            email: 'agent@example.com',
+          },
+          workspace: {
+            id: 77,
+            name: 'Acme',
+          },
+          scopes: ['workspace:read', 'tools:read'],
+          active_job_count: 2,
+          max_concurrent_jobs: 5,
+        },
+        request_id: 'req-whoami-self-hosted',
+      }));
+
+      await whoamiCommand(
+        {
+          configPath,
+        },
+        {
+          loadConfig,
+          apiRequest,
+        },
+      );
+
+      expect(apiRequest).toHaveBeenCalledWith({
+        baseUrl: 'https://self-hosted.example.com',
+        token: 'legacy-self-hosted-token',
+        method: 'GET',
+        path: '/api/cli/me',
+      });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
 });

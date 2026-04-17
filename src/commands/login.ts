@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { apiRequest } from '../lib/http.js';
 import { openBrowser } from '../lib/browser.js';
 import {
+  getActiveProfile,
   loadConfig,
   saveConfig,
   type ToollistConfig,
@@ -157,25 +158,40 @@ export async function loginCommand(
     const exchange: LoginExchangePayload = exchangeEnvelope.data;
 
     const baseUrl = exchange.base_url ?? args.baseUrl;
-    const environment = args.environment
-      ?? inferEnvironmentFromBaseUrl(baseUrl)
-      ?? DEFAULT_ENVIRONMENT;
+    const inferredEnvironment = inferEnvironmentFromBaseUrl(baseUrl);
     const existingConfig = (await deps.loadConfig(args.configPath)) ?? {
-      activeEnvironment: environment,
+      activeEnvironment: DEFAULT_ENVIRONMENT,
       profiles: {},
     };
-    const config: ToollistConfig = {
-      ...existingConfig,
-      activeEnvironment: environment,
-      profiles: {
-        ...existingConfig.profiles,
-        [environment]: {
-          environment,
+    const environment = inferredEnvironment ?? args.environment;
+    const config: ToollistConfig = environment
+      ? {
+        ...existingConfig,
+        activeEnvironment: environment,
+        profiles: {
+          ...existingConfig.profiles,
+          [environment]: {
+            environment,
+            baseUrl,
+            accessToken: exchange.access_token,
+          },
+        },
+      }
+      : {
+        ...existingConfig,
+        activeEnvironment: existingConfig.activeEnvironment ?? DEFAULT_ENVIRONMENT,
+        activeProfile: {
           baseUrl,
           accessToken: exchange.access_token,
         },
-      },
-    };
+        profiles: {
+          ...existingConfig.profiles,
+        },
+      };
+
+    if (environment && getActiveProfile(config)) {
+      delete config.activeProfile;
+    }
 
     await deps.saveConfig(config, args.configPath);
 

@@ -102,6 +102,44 @@ describe('login command', () => {
     });
   });
 
+  it('does not force TOOLIST_ENV onto login when --base-url is explicit', async () => {
+    vi.stubEnv('TOOLIST_ENV', 'test');
+
+    const loginCommand = vi.fn(async () => ({
+      baseUrl: 'https://self-hosted.example.com',
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      expiresAt: '2026-04-13T00:00:00.000Z',
+    }));
+
+    vi.doMock('../../src/commands/login.js', () => ({
+      loginCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    const exitCode = await main(['login', '--base-url', 'https://self-hosted.example.com', '--json'], {
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(loginCommand).toHaveBeenCalledWith({
+      baseUrl: 'https://self-hosted.example.com',
+      environment: undefined,
+      clientName: undefined,
+      configPath: undefined,
+    }, {
+      announceBrowserLaunch: expect.any(Function),
+    });
+  });
+
   it('opens the browser, exchanges the auth code, and stores config', async () => {
     const { loginCommand } = await import('../../src/commands/login.js');
 
@@ -125,7 +163,7 @@ describe('login command', () => {
         workspace_name: 'Acme',
         user_id: 11,
         user_email: 'agent@example.com',
-        base_url: 'https://api.example.com',
+        base_url: 'https://tooli.st',
         scopes: ['workspace:read', 'tools:read'],
       },
       request_id: 'req_login_123',
@@ -133,7 +171,7 @@ describe('login command', () => {
 
     const result = await loginCommand(
       {
-        baseUrl: 'https://api.example.com',
+        baseUrl: 'https://tooli.st',
         clientName: 'Local CLI',
         configPath: '/tmp/toollist-config.json',
       },
@@ -154,15 +192,15 @@ describe('login command', () => {
     expect(openBrowser).toHaveBeenCalledTimes(1);
 
     const openedUrl = new URL(openBrowser.mock.calls[0]![0]);
-    expect(openedUrl.origin + openedUrl.pathname).toBe('https://api.example.com/api/cli/auth/start');
+    expect(openedUrl.origin + openedUrl.pathname).toBe('https://tooli.st/api/cli/auth/start');
     expect(openedUrl.searchParams.get('redirect_uri')).toBe('http://localhost:45231/callback');
     expect(openedUrl.searchParams.get('state')).toBe('state_123');
     expect(openedUrl.searchParams.get('code_challenge')).toBe('challenge_123');
     expect(openedUrl.searchParams.get('client_name')).toBe('Local CLI');
-    expect(openedUrl.searchParams.get('base_url')).toBe('https://api.example.com');
+    expect(openedUrl.searchParams.get('base_url')).toBe('https://tooli.st');
 
     expect(apiRequest).toHaveBeenCalledWith({
-      baseUrl: 'https://api.example.com',
+      baseUrl: 'https://tooli.st',
       method: 'POST',
       path: '/api/cli/auth/exchange',
       body: {
@@ -178,7 +216,7 @@ describe('login command', () => {
         profiles: {
           prod: {
             environment: 'prod',
-            baseUrl: 'https://api.example.com',
+            baseUrl: 'https://tooli.st',
             accessToken: 'tgc_cli_secret',
           },
         },
@@ -186,7 +224,7 @@ describe('login command', () => {
       '/tmp/toollist-config.json',
     );
     expect(result).toEqual({
-      baseUrl: 'https://api.example.com',
+      baseUrl: 'https://tooli.st',
       workspace: {
         id: 77,
         name: 'Acme',
@@ -197,6 +235,123 @@ describe('login command', () => {
       },
       expiresAt: '2026-04-13T00:00:00.000Z',
     });
+  });
+
+  it('stores self-hosted logins as the active custom profile instead of forcing a hosted env slot', async () => {
+    const { loginCommand } = await import('../../src/commands/login.js');
+
+    const saveConfig = vi.fn(async () => undefined);
+    const startCallbackServer = vi.fn(async (expectedState: string) => ({
+      redirectUri: 'http://localhost:45231/callback',
+      waitForCallback: async () => ({
+        code: 'code_123',
+        state: expectedState,
+      }),
+      close: async () => undefined,
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        access_token: 'tgc_cli_secret',
+        token_type: 'Bearer',
+        expires_at: '2026-04-13T00:00:00.000Z',
+        workspace_id: 77,
+        workspace_name: 'Acme',
+        user_id: 11,
+        user_email: 'agent@example.com',
+        base_url: 'https://self-hosted.example.com',
+        scopes: ['workspace:read', 'tools:read'],
+      },
+      request_id: 'req_login_self_hosted',
+    }));
+
+    await loginCommand(
+      {
+        baseUrl: 'https://self-hosted.example.com',
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        openBrowser: vi.fn(async () => undefined),
+        announceBrowserLaunch: vi.fn(),
+        saveConfig,
+        startCallbackServer,
+        apiRequest,
+        randomUUID: () => 'state_123',
+        createCodeVerifier: () => 'verifier_123',
+        createCodeChallenge: () => 'challenge_123',
+      },
+    );
+
+    expect(saveConfig).toHaveBeenCalledWith(
+      {
+        activeEnvironment: 'prod',
+        activeProfile: {
+          baseUrl: 'https://self-hosted.example.com',
+          accessToken: 'tgc_cli_secret',
+        },
+        profiles: {},
+      },
+      '/tmp/toollist-config.json',
+    );
+  });
+
+  it('prefers the authenticated hosted base URL over a mismatched inferred environment argument', async () => {
+    const { loginCommand } = await import('../../src/commands/login.js');
+
+    const saveConfig = vi.fn(async () => undefined);
+    const startCallbackServer = vi.fn(async (expectedState: string) => ({
+      redirectUri: 'http://localhost:45231/callback',
+      waitForCallback: async () => ({
+        code: 'code_123',
+        state: expectedState,
+      }),
+      close: async () => undefined,
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        access_token: 'tgc_cli_secret',
+        token_type: 'Bearer',
+        expires_at: '2026-04-13T00:00:00.000Z',
+        workspace_id: 77,
+        workspace_name: 'Acme',
+        user_id: 11,
+        user_email: 'agent@example.com',
+        base_url: 'https://test.tooli.st',
+        scopes: ['workspace:read', 'tools:read'],
+      },
+      request_id: 'req_login_hosted_precedence',
+    }));
+
+    await loginCommand(
+      {
+        baseUrl: 'https://preview.tooli.st',
+        environment: 'prod',
+        configPath: '/tmp/toollist-config.json',
+      },
+      {
+        openBrowser: vi.fn(async () => undefined),
+        announceBrowserLaunch: vi.fn(),
+        saveConfig,
+        startCallbackServer,
+        apiRequest,
+        randomUUID: () => 'state_123',
+        createCodeVerifier: () => 'verifier_123',
+        createCodeChallenge: () => 'challenge_123',
+      },
+    );
+
+    expect(saveConfig).toHaveBeenCalledWith(
+      {
+        activeEnvironment: 'test',
+        profiles: {
+          test: {
+            environment: 'test',
+            baseUrl: 'https://test.tooli.st',
+            accessToken: 'tgc_cli_secret',
+          },
+        },
+      },
+      '/tmp/toollist-config.json',
+    );
   });
 
   it('closes the callback server when browser launch fails', async () => {

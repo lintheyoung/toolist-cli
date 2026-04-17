@@ -20,7 +20,7 @@ import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
-import { getProfileForEnvironment, loadConfig } from './lib/config.js';
+import { getActiveProfile, getProfileForEnvironment, loadConfig } from './lib/config.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -2387,6 +2387,17 @@ async function resolveApiCredentials(args: {
   }
 
   const config = await loadConfig(args.configPath);
+  const activeProfile = !args.baseUrl && !args.env && !process.env.TOOLIST_ENV
+    ? getActiveProfile(config)
+    : null;
+
+  if (activeProfile && (activeProfile.accessToken || args.token)) {
+    return {
+      baseUrl: activeProfile.baseUrl,
+      token: args.token ?? activeProfile.accessToken!,
+    };
+  }
+
   const environment = args.env
     ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
     ?? config?.activeEnvironment
@@ -2415,14 +2426,18 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
     try {
       const loginArgs = parseLoginArgs(rest);
       const config = await loadConfig(loginArgs.configPath);
-      const environment = loginArgs.env
-        ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
-        ?? config?.activeEnvironment
-        ?? DEFAULT_ENVIRONMENT;
+      const inferredEnvironment = loginArgs.baseUrl
+        ? undefined
+        : (
+          loginArgs.env
+          ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
+          ?? config?.activeEnvironment
+          ?? DEFAULT_ENVIRONMENT
+        );
       const result = await loginCommand({
         baseUrl: loginArgs.baseUrl
-          ?? resolveEnvironmentBaseUrl(environment),
-        environment,
+          ?? resolveEnvironmentBaseUrl(inferredEnvironment ?? DEFAULT_ENVIRONMENT),
+        environment: inferredEnvironment,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
       }, {
