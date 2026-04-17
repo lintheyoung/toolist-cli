@@ -1241,6 +1241,7 @@ function parseImageResizeBatchArgs(args: string[]): {
   outputDir?: string;
   resume?: boolean;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -1255,6 +1256,7 @@ function parseImageResizeBatchArgs(args: string[]): {
     outputDir?: string;
     resume?: boolean;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {};
@@ -1273,6 +1275,17 @@ function parseImageResizeBatchArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -1429,6 +1442,7 @@ function parseImageConvertBatchArgs(args: string[]): {
   outputDir?: string;
   resume?: boolean;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -1442,6 +1456,7 @@ function parseImageConvertBatchArgs(args: string[]): {
     outputDir?: string;
     resume?: boolean;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {};
@@ -1460,6 +1475,17 @@ function parseImageConvertBatchArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -1606,6 +1632,7 @@ function parseImageCropBatchArgs(args: string[]): {
   outputDir?: string;
   resume?: boolean;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -1623,6 +1650,7 @@ function parseImageCropBatchArgs(args: string[]): {
     outputDir?: string;
     resume?: boolean;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {};
@@ -1641,6 +1669,17 @@ function parseImageCropBatchArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2342,6 +2381,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       const whoamiArgs = parseConfigPathArgs(rest);
       const result = await whoamiCommand({
         configPath: whoamiArgs.configPath,
+        env: whoamiArgs.env,
       });
       io.stdout(`${JSON.stringify(result)}\n`);
       return 0;
@@ -2356,6 +2396,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       const logoutArgs = parseConfigPathArgs(rest);
       const result = await logoutCommand({
         configPath: logoutArgs.configPath,
+        env: logoutArgs.env,
       });
       io.stdout(`${JSON.stringify(result)}\n`);
       return 0;
@@ -2601,6 +2642,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           wait: parsed.wait,
           outputDir: parsed.outputDir,
           resume: parsed.resume,
+          env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
         });
@@ -2650,6 +2692,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           wait: parsed.wait,
           outputDir: parsed.outputDir,
           resume: parsed.resume,
+          env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
         });

@@ -31,7 +31,7 @@ describe('whoami command', () => {
     let stdout = '';
     let stderr = '';
 
-    const exitCode = await main(['whoami', '--config-path', '/tmp/toollist-config.json', '--json'], {
+    const exitCode = await main(['whoami', '--config-path', '/tmp/toollist-config.json', '--env', 'test', '--json'], {
       stdout: (chunk) => {
         stdout += chunk;
       },
@@ -43,6 +43,7 @@ describe('whoami command', () => {
     expect(exitCode).toBe(0);
     expect(whoamiCommand).toHaveBeenCalledWith({
       configPath: '/tmp/toollist-config.json',
+      env: 'test',
     });
     expect(JSON.parse(stdout)).toEqual({
       user: {
@@ -87,6 +88,7 @@ describe('whoami command', () => {
     const result = await whoamiCommand(
       {
         configPath: '/tmp/toollist-config.json',
+        env: 'dev',
       },
       {
         loadConfig,
@@ -96,7 +98,7 @@ describe('whoami command', () => {
 
     expect(loadConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
     expect(apiRequest).toHaveBeenCalledWith({
-      baseUrl: 'https://api.example.com',
+      baseUrl: 'http://localhost:3024',
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',

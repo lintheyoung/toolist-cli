@@ -44,8 +44,19 @@ describe('image convert-batch command', () => {
   });
 
   it('accepts image convert-batch with explicit --inputs', async () => {
-    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
-      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    const imageConvertBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 2,
+        succeeded: 2,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/convert-batch.js', () => ({
+      buildConvertBatchManifest: vi.fn(),
+      imageConvertBatchCommand,
     }));
     const result = await runCli([
       'image',
@@ -72,11 +83,36 @@ describe('image convert-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
+    expect(imageConvertBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
+      inputGlob: undefined,
+      to: 'webp',
+      quality: undefined,
+      concurrency: 2,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: true,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: '/tmp/toollist-config.json',
+      env: undefined,
+    });
   });
 
   it('accepts image convert-batch with --input-glob', async () => {
-    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
-      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    const imageConvertBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 2,
+        succeeded: 2,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/convert-batch.js', () => ({
+      buildConvertBatchManifest: vi.fn(),
+      imageConvertBatchCommand,
     }));
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-convert-batch-'));
     const first = join(tempDir, 'a.jpg');
@@ -105,8 +141,70 @@ describe('image convert-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
+    expect(imageConvertBatchCommand).toHaveBeenCalledWith({
+      inputs: undefined,
+      inputGlob: join(tempDir, '*.jpg'),
+      to: 'png',
+      quality: undefined,
+      concurrency: 3,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: undefined,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: undefined,
+    });
 
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('accepts image convert-batch with --env and resolves the hosted base URL', async () => {
+    const imageConvertBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/convert-batch.js', () => ({
+      buildConvertBatchManifest: vi.fn(),
+      imageConvertBatchCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'convert-batch',
+      '--inputs',
+      '/tmp/photo-a.jpg',
+      '--to',
+      'webp',
+      '--env',
+      'test',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(imageConvertBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg'],
+      inputGlob: undefined,
+      to: 'webp',
+      quality: undefined,
+      concurrency: undefined,
+      wait: undefined,
+      outputDir: undefined,
+      resume: undefined,
+      baseUrl: 'https://test.tooli.st',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: 'test',
+    });
   });
 
   it('rejects convert-batch when --to is missing', async () => {

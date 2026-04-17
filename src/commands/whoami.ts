@@ -1,8 +1,13 @@
 import { apiRequest } from '../lib/http.js';
 import { loadConfig, type ToollistConfig } from '../lib/config.js';
+import {
+  resolveEnvironmentBaseUrl,
+  type ToolistEnvironment,
+} from '../lib/environments.js';
 
 export interface WhoamiCommandArgs {
   configPath?: string;
+  env?: ToolistEnvironment;
 }
 
 export interface WhoamiCommandResult {
@@ -54,7 +59,7 @@ export async function whoamiCommand(
   };
   const config = getRequiredConfig(await deps.loadConfig(args.configPath));
   const response = await deps.apiRequest<WhoamiResponse>({
-    baseUrl: config.baseUrl,
+    baseUrl: args.env ? resolveEnvironmentBaseUrl(args.env) : config.baseUrl,
     token: config.accessToken,
     method: 'GET',
     path: '/api/cli/me',

@@ -89,23 +89,24 @@ describe('image crop-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
-    expect(imageCropBatchCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
-        x: 10,
-        y: 20,
-        width: 640,
-        height: 480,
-        to: 'webp',
-        concurrency: 2,
-        wait: true,
-        outputDir: '/tmp/outputs',
-        resume: true,
-        baseUrl: 'https://api.example.com',
-        token: 'tgc_cli_secret',
-        configPath: '/tmp/toollist-config.json',
-      }),
-    );
+    expect(imageCropBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
+      inputGlob: undefined,
+      x: 10,
+      y: 20,
+      width: 640,
+      height: 480,
+      to: 'webp',
+      quality: undefined,
+      concurrency: 2,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: true,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: '/tmp/toollist-config.json',
+      env: undefined,
+    });
   });
 
   it('accepts image crop-batch with --input-glob', async () => {
@@ -151,20 +152,82 @@ describe('image crop-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
-    expect(imageCropBatchCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputGlob: '/tmp/photos/*.jpg',
-        x: 5,
-        y: 15,
-        width: 320,
-        height: 240,
-        concurrency: 3,
-        outputDir: '/tmp/outputs',
-        wait: true,
-        baseUrl: 'https://api.example.com',
-        token: 'tgc_cli_secret',
-      }),
-    );
+    expect(imageCropBatchCommand).toHaveBeenCalledWith({
+      inputs: undefined,
+      inputGlob: '/tmp/photos/*.jpg',
+      x: 5,
+      y: 15,
+      width: 320,
+      height: 240,
+      to: undefined,
+      quality: undefined,
+      concurrency: 3,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: undefined,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: undefined,
+    });
+  });
+
+  it('accepts image crop-batch with --env and resolves the hosted base URL', async () => {
+    const imageCropBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/crop-batch.js', () => ({
+      buildCropBatchManifest: vi.fn(),
+      imageCropBatchCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'crop-batch',
+      '--inputs',
+      '/tmp/photo-a.jpg',
+      '--x',
+      '10',
+      '--y',
+      '20',
+      '--width',
+      '640',
+      '--height',
+      '480',
+      '--env',
+      'test',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(imageCropBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg'],
+      inputGlob: undefined,
+      x: 10,
+      y: 20,
+      width: 640,
+      height: 480,
+      to: undefined,
+      quality: undefined,
+      concurrency: undefined,
+      wait: undefined,
+      outputDir: undefined,
+      resume: undefined,
+      baseUrl: 'https://test.tooli.st',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: 'test',
+    });
   });
 
   it('rejects crop-batch when x, y, width, or height is missing', async () => {

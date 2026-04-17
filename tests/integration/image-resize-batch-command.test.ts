@@ -312,20 +312,21 @@ describe('image resize-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
-    expect(imageResizeBatchCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
-        width: 640,
-        to: 'webp',
-        concurrency: 2,
-        wait: true,
-        outputDir: '/tmp/outputs',
-        resume: true,
-        baseUrl: 'https://api.example.com',
-        token: 'tgc_cli_secret',
-        configPath: '/tmp/toollist-config.json',
-      }),
-    );
+    expect(imageResizeBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
+      inputGlob: undefined,
+      width: 640,
+      height: undefined,
+      to: 'webp',
+      concurrency: 2,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: true,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: '/tmp/toollist-config.json',
+      env: undefined,
+    });
   });
 
   it('accepts image resize-batch with --input-glob', async () => {
@@ -365,17 +366,70 @@ describe('image resize-batch command', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
-    expect(imageResizeBatchCommand).toHaveBeenCalledWith(
-      expect.objectContaining({
-        inputGlob: '/tmp/photos/*.jpg',
-        height: 480,
-        concurrency: 3,
-        outputDir: '/tmp/outputs',
-        wait: true,
-        baseUrl: 'https://api.example.com',
-        token: 'tgc_cli_secret',
-      }),
-    );
+    expect(imageResizeBatchCommand).toHaveBeenCalledWith({
+      inputs: undefined,
+      inputGlob: '/tmp/photos/*.jpg',
+      width: undefined,
+      height: 480,
+      to: undefined,
+      concurrency: 3,
+      wait: true,
+      outputDir: '/tmp/outputs',
+      resume: undefined,
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: undefined,
+    });
+  });
+
+  it('accepts image resize-batch with --env and resolves the hosted base URL', async () => {
+    const imageResizeBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: {
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        skipped: 0,
+      },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/resize-batch.js', () => ({
+      buildResizeBatchManifest: vi.fn(),
+      imageResizeBatchCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'resize-batch',
+      '--inputs',
+      '/tmp/photo-a.jpg',
+      '--width',
+      '1600',
+      '--env',
+      'dev',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(imageResizeBatchCommand).toHaveBeenCalledWith({
+      inputs: ['/tmp/photo-a.jpg'],
+      inputGlob: undefined,
+      width: 1600,
+      height: undefined,
+      to: undefined,
+      concurrency: undefined,
+      wait: undefined,
+      outputDir: undefined,
+      resume: undefined,
+      baseUrl: 'http://localhost:3024',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+      env: 'dev',
+    });
   });
 
   it('rejects resize-batch when neither width nor height is provided', async () => {

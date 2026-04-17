@@ -195,6 +195,39 @@ describe('jobs commands', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('resolves hosted environments for jobs get', async () => {
+    const getJobCommand = vi.fn(async () => ({
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    }));
+
+    vi.doMock('../../src/commands/jobs/get.js', () => ({
+      getJobCommand,
+    }));
+
+    const result = await runCli([
+      'jobs',
+      'get',
+      'job_123',
+      '--env',
+      'test',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(getJobCommand).toHaveBeenCalledWith({
+      jobId: 'job_123',
+      baseUrl: 'https://test.tooli.st',
+      token: 'tgc_cli_secret',
+      configPath: undefined,
+    });
+    expect(result.stderr).toBe('');
+  });
+
   it('dispatches jobs wait through the CLI and prints the JSON result', async () => {
     const waitJobCommand = vi.fn(async () => ({
       id: 'job_123',

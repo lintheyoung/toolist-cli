@@ -21,7 +21,7 @@ describe('logout command', () => {
     let stdout = '';
     let stderr = '';
 
-    const exitCode = await main(['logout', '--config-path', '/tmp/toollist-config.json', '--json'], {
+    const exitCode = await main(['logout', '--config-path', '/tmp/toollist-config.json', '--env', 'test', '--json'], {
       stdout: (chunk) => {
         stdout += chunk;
       },
@@ -33,6 +33,7 @@ describe('logout command', () => {
     expect(exitCode).toBe(0);
     expect(logoutCommand).toHaveBeenCalledWith({
       configPath: '/tmp/toollist-config.json',
+      env: 'test',
     });
     expect(JSON.parse(stdout)).toEqual({
       loggedOut: true,
@@ -43,17 +44,24 @@ describe('logout command', () => {
   it('clears the saved config file', async () => {
     const { logoutCommand } = await import('../../src/commands/logout.js');
 
+    const loadConfig = vi.fn(async () => ({
+      baseUrl: 'https://test.tooli.st',
+      accessToken: 'tgc_cli_secret',
+    }));
     const clearConfig = vi.fn(async () => undefined);
 
     const result = await logoutCommand(
       {
         configPath: '/tmp/toollist-config.json',
+        env: 'test',
       },
       {
+        loadConfig,
         clearConfig,
       },
     );
 
+    expect(loadConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
     expect(clearConfig).toHaveBeenCalledWith('/tmp/toollist-config.json');
     expect(result).toEqual({
       loggedOut: true,

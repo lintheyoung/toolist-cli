@@ -3,6 +3,7 @@ import { glob } from 'node:fs/promises';
 import { runBatchCommand, type BatchRunResult } from '../batch/run.js';
 import type { BatchManifest, BatchManifestDefaults } from '../../lib/batch-manifest.js';
 import { buildHomogeneousImageBatchManifest } from './homogeneous-batch-manifest.js';
+import type { ToolistEnvironment } from '../../lib/environments.js';
 
 export interface ImageResizeBatchCommandArgs {
   inputs?: string[];
@@ -14,6 +15,7 @@ export interface ImageResizeBatchCommandArgs {
   wait?: boolean;
   outputDir?: string;
   resume?: boolean;
+  env?: ToolistEnvironment;
   baseUrl: string;
   token: string;
   configPath?: string;
