@@ -144,6 +144,16 @@ Example manifest:
 }
 ```
 
+## Delivery Flow
+
+For cross-repo changes:
+
+1. develop in matching feature branches
+2. validate locally
+3. merge to `staging`
+4. validate CLI against `--env test`
+5. release to `main` after the hosted platform is ready
+
 ## Development
 
 ```bash
