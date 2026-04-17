@@ -160,7 +160,7 @@ export function getImageHelp(): string {
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>]',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>]',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -906,6 +906,7 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
   timeoutSeconds?: number;
   output?: string;
   baseUrl?: string;
+  env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
 } {
@@ -916,6 +917,7 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
     timeoutSeconds?: number;
     output?: string;
     baseUrl?: string;
+    env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
   } = {
@@ -936,6 +938,14 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      parsed.env = resolveEnvironmentName(value);
       if (consumeNext) {
         index += 1;
       }
@@ -2557,6 +2567,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
+          env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
         });

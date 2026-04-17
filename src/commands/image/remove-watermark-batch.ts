@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
+import type { ToolistEnvironment } from '../../lib/environments.js';
 import { createZipBatchInput, type CreateZipBatchInputResult } from '../../lib/zip-batch-input.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
@@ -12,6 +13,7 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
+  env?: ToolistEnvironment;
   baseUrl: string;
   token: string;
   configPath?: string;
