@@ -27,3 +27,23 @@ export function resolveEnvironmentBaseUrl(
 ): string {
   return ENVIRONMENT_BASE_URLS[env];
 }
+
+export function inferEnvironmentFromBaseUrl(
+  baseUrl: string,
+): ToolistEnvironment | null {
+  let normalizedBaseUrl: string;
+
+  try {
+    normalizedBaseUrl = new URL(baseUrl).origin;
+  } catch {
+    return null;
+  }
+
+  for (const environment of ['prod', 'test', 'dev'] as const) {
+    if (normalizedBaseUrl === new URL(resolveEnvironmentBaseUrl(environment)).origin) {
+      return environment;
+    }
+  }
+
+  return null;
+}

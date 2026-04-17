@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   DEFAULT_ENVIRONMENT,
+  inferEnvironmentFromBaseUrl,
   type ToolistEnvironment,
 } from './environments.js';
 
@@ -55,11 +56,19 @@ function migrateLegacyConfig(parsed: Record<string, unknown>): ToollistConfig | 
     return null;
   }
 
+  const environment = inferEnvironmentFromBaseUrl(parsed.baseUrl);
+
+  if (!environment) {
+    throw new Error(
+      `Cannot migrate legacy config with unknown base URL: ${parsed.baseUrl}`,
+    );
+  }
+
   return {
-    activeEnvironment: 'prod',
+    activeEnvironment: environment,
     profiles: {
-      prod: {
-        environment: 'prod',
+      [environment]: {
+        environment,
         baseUrl: parsed.baseUrl,
         accessToken: typeof parsed.accessToken === 'string' ? parsed.accessToken : undefined,
       },

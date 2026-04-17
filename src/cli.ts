@@ -2414,10 +2414,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   if (command === 'login') {
     try {
       const loginArgs = parseLoginArgs(rest);
+      const config = await loadConfig(loginArgs.configPath);
+      const environment = loginArgs.env
+        ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
+        ?? config?.activeEnvironment
+        ?? DEFAULT_ENVIRONMENT;
       const result = await loginCommand({
         baseUrl: loginArgs.baseUrl
-          ?? (loginArgs.env ? resolveEnvironmentBaseUrl(loginArgs.env) : DEFAULT_BASE_URL),
-        environment: loginArgs.env,
+          ?? resolveEnvironmentBaseUrl(environment),
+        environment,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
       }, {

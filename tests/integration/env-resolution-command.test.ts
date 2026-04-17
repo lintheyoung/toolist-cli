@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -130,6 +130,31 @@ describe('CLI environment resolution', () => {
             environment: 'prod',
             baseUrl: 'https://tooli.st',
             accessToken: 'prod-token',
+          },
+        },
+      });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('migrates a legacy single-profile config into the matching non-prod environment', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
+    const configPath = join(configDir, 'config.json');
+
+    try {
+      await writeFile(configPath, JSON.stringify({
+        baseUrl: 'https://test.tooli.st',
+        accessToken: 'legacy-test-token',
+      }));
+
+      expect(await loadConfig(configPath)).toEqual({
+        activeEnvironment: 'test',
+        profiles: {
+          test: {
+            environment: 'test',
+            baseUrl: 'https://test.tooli.st',
+            accessToken: 'legacy-test-token',
           },
         },
       });

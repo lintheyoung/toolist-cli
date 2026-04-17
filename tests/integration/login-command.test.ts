@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock('../../src/commands/login.js');
@@ -61,6 +62,44 @@ describe('login command', () => {
       expiresAt: '2026-04-13T00:00:00.000Z',
     });
     expect(stderr).toBe('');
+  });
+
+  it('uses TOOLIST_ENV for login when --env is omitted', async () => {
+    vi.stubEnv('TOOLIST_ENV', 'test');
+
+    const loginCommand = vi.fn(async () => ({
+      baseUrl: 'https://test.tooli.st',
+      workspace: {
+        id: 77,
+        name: 'Acme',
+      },
+      user: {
+        id: 11,
+        email: 'agent@example.com',
+      },
+      expiresAt: '2026-04-13T00:00:00.000Z',
+    }));
+
+    vi.doMock('../../src/commands/login.js', () => ({
+      loginCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    const exitCode = await main(['login', '--json'], {
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(loginCommand).toHaveBeenCalledWith({
+      baseUrl: 'https://test.tooli.st',
+      environment: 'test',
+      clientName: undefined,
+      configPath: undefined,
+    }, {
+      announceBrowserLaunch: expect.any(Function),
+    });
   });
 
   it('opens the browser, exchanges the auth code, and stores config', async () => {

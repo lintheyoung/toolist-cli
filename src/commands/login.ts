@@ -10,6 +10,7 @@ import {
 import { startCallbackServer, type CallbackServer } from '../lib/callback-server.js';
 import {
   DEFAULT_ENVIRONMENT,
+  inferEnvironmentFromBaseUrl,
   resolveEnvironmentBaseUrl,
   type ToolistEnvironment,
 } from '../lib/environments.js';
@@ -102,16 +103,6 @@ function createDefaultDependencies(): LoginDependencies {
   };
 }
 
-function inferEnvironmentFromBaseUrl(baseUrl: string): ToolistEnvironment {
-  for (const environment of ['prod', 'test', 'dev'] as const) {
-    if (baseUrl === resolveEnvironmentBaseUrl(environment)) {
-      return environment;
-    }
-  }
-
-  return DEFAULT_ENVIRONMENT;
-}
-
 export async function loginCommand(
   args: LoginCommandArgs,
   dependencies: Partial<LoginDependencies> = {},
@@ -166,7 +157,9 @@ export async function loginCommand(
     const exchange: LoginExchangePayload = exchangeEnvelope.data;
 
     const baseUrl = exchange.base_url ?? args.baseUrl;
-    const environment = args.environment ?? inferEnvironmentFromBaseUrl(baseUrl);
+    const environment = args.environment
+      ?? inferEnvironmentFromBaseUrl(baseUrl)
+      ?? DEFAULT_ENVIRONMENT;
     const existingConfig = (await deps.loadConfig(args.configPath)) ?? {
       activeEnvironment: environment,
       profiles: {},
