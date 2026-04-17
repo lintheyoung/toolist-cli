@@ -8,9 +8,12 @@ import { loginCommand } from '../../src/commands/login.js';
 import { logoutCommand } from '../../src/commands/logout.js';
 import { whoamiCommand } from '../../src/commands/whoami.js';
 import { loadConfig } from '../../src/lib/config.js';
+import { resolveEnvironmentBaseUrl } from '../../src/lib/environments.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.resetModules();
+  vi.unstubAllEnvs();
 });
 
 function createLoginDependencies(accessToken: string, baseUrl: string) {
@@ -43,6 +46,23 @@ function createLoginDependencies(accessToken: string, baseUrl: string) {
     createCodeVerifier: () => `verifier-${accessToken}`,
     createCodeChallenge: () => `challenge-${accessToken}`,
   };
+}
+
+async function runCli(args: string[]) {
+  let stdout = '';
+  let stderr = '';
+
+  const { main } = await import('../../src/cli.js');
+  const exitCode = await main(args, {
+    stdout: (chunk) => {
+      stdout += chunk;
+    },
+    stderr: (chunk) => {
+      stderr += chunk;
+    },
+  });
+
+  return { exitCode, stdout, stderr };
 }
 
 describe('CLI environment resolution', () => {
@@ -216,6 +236,161 @@ describe('CLI environment resolution', () => {
         token: 'legacy-self-hosted-token',
         method: 'GET',
         path: '/api/cli/me',
+      });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers --base-url over --env, TOOLIST_ENV, and the active config environment', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
+    const configPath = join(configDir, 'config.json');
+    const listToolsCommand = vi.fn(async () => []);
+
+    vi.resetModules();
+    vi.doMock('../../src/commands/tools/list.js', () => ({
+      listToolsCommand,
+    }));
+
+    try {
+      await writeFile(configPath, JSON.stringify({
+        activeEnvironment: 'dev',
+        profiles: {
+          dev: {
+            environment: 'dev',
+            baseUrl: 'http://localhost:3024',
+            accessToken: 'dev-token',
+          },
+          test: {
+            environment: 'test',
+            baseUrl: 'https://custom-test.example.com',
+            accessToken: 'test-token',
+          },
+        },
+      }));
+
+      vi.stubEnv('TOOLIST_ENV', 'test');
+
+      const result = await runCli([
+        'tools',
+        'list',
+        '--base-url',
+        'https://override.example.com',
+        '--env',
+        'prod',
+        '--config-path',
+        configPath,
+        '--token',
+        'override-token',
+        '--json',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(listToolsCommand).toHaveBeenCalledWith({
+        baseUrl: 'https://override.example.com',
+        token: 'override-token',
+        configPath,
+      });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers --env over TOOLIST_ENV and config when resolving hosted commands', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
+    const configPath = join(configDir, 'config.json');
+    const listToolsCommand = vi.fn(async () => []);
+
+    vi.resetModules();
+    vi.doMock('../../src/commands/tools/list.js', () => ({
+      listToolsCommand,
+    }));
+
+    try {
+      await writeFile(configPath, JSON.stringify({
+        activeEnvironment: 'dev',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://custom-prod.example.com',
+            accessToken: 'prod-token',
+          },
+          dev: {
+            environment: 'dev',
+            baseUrl: 'http://localhost:4010',
+            accessToken: 'dev-token',
+          },
+        },
+      }));
+
+      vi.stubEnv('TOOLIST_ENV', 'dev');
+
+      const result = await runCli([
+        'tools',
+        'list',
+        '--env',
+        'prod',
+        '--config-path',
+        configPath,
+        '--json',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(listToolsCommand).toHaveBeenCalledWith({
+        baseUrl: resolveEnvironmentBaseUrl('prod'),
+        token: 'prod-token',
+        configPath,
+      });
+    } finally {
+      await rm(configDir, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers TOOLIST_ENV over the active config environment for hosted commands', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'toollist-env-resolution-'));
+    const configPath = join(configDir, 'config.json');
+    const listToolsCommand = vi.fn(async () => []);
+
+    vi.resetModules();
+    vi.doMock('../../src/commands/tools/list.js', () => ({
+      listToolsCommand,
+    }));
+
+    try {
+      await writeFile(configPath, JSON.stringify({
+        activeEnvironment: 'prod',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://custom-prod.example.com',
+            accessToken: 'prod-token',
+          },
+          test: {
+            environment: 'test',
+            baseUrl: 'https://custom-test.example.com',
+            accessToken: 'test-token',
+          },
+        },
+      }));
+
+      vi.stubEnv('TOOLIST_ENV', 'test');
+
+      const result = await runCli([
+        'tools',
+        'list',
+        '--config-path',
+        configPath,
+        '--json',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(listToolsCommand).toHaveBeenCalledWith({
+        baseUrl: resolveEnvironmentBaseUrl('test'),
+        token: 'test-token',
+        configPath,
       });
     } finally {
       await rm(configDir, { recursive: true, force: true });

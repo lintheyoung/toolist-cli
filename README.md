@@ -25,31 +25,45 @@ Authenticate with the platform:
 npx toolist-cli@latest login
 ```
 
-By default the CLI connects to `https://tooli.st`. Use `--base-url` only when
-targeting a self-hosted, staging, or other custom environment.
-
-The built-in environment mapping is:
-
-- `prod` -> `https://tooli.st`
-- `test` -> `https://test.tooli.st`
-- `dev` -> `http://localhost:3024`
-
-Example usage:
-
-```bash
-npx toolist-cli@latest files upload --input ./photo.jpg --env prod
-npx toolist-cli@latest files upload --input ./photo.jpg --env test
-npx toolist-cli@latest files upload --input ./photo.jpg --env dev
-```
-
-After logging in, commands reuse the saved login automatically. You only need
-`--token` when you want to override the saved credentials explicitly.
-
 Inspect your current identity:
 
 ```bash
 npx toolist-cli@latest whoami
 ```
+
+## Environments
+
+The CLI has three built-in hosted environments:
+
+- `prod` -> `https://tooli.st`
+- `test` -> `https://test.tooli.st`
+- `dev` -> `http://localhost:3024`
+
+If you do not pass any environment flags, the CLI resolves the target in this
+order:
+
+1. `--base-url`
+2. `--env`
+3. `TOOLIST_ENV`
+4. Saved config active environment
+5. `prod`
+
+`--base-url` is for self-hosted or custom deployments. Hosted environment
+selection always uses the canonical Toollist URLs above, even if you previously
+saved a profile for that environment.
+
+Examples:
+
+```bash
+npx toolist-cli@latest login --env test
+npx toolist-cli@latest whoami --env prod
+TOOLIST_ENV=dev npx toolist-cli@latest files upload --input ./photo.jpg
+npx toolist-cli@latest files upload --input ./photo.jpg --env test
+npx toolist-cli@latest tools list --base-url https://self-hosted.example.com --token $TOOLIST_TOKEN
+```
+
+After logging in, commands reuse the saved login automatically. You only need
+`--token` when you want to override the saved credentials explicitly.
 
 Run a high-level image conversion:
 

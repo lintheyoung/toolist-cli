@@ -25,6 +25,8 @@ import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
   resolveEnvironmentName,
+  resolveEnvironmentSelection,
+  resolveSelectedProfileBaseUrl,
   type ToolistEnvironment,
 } from './lib/environments.js';
 
@@ -185,7 +187,7 @@ export function getImageConvertBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -211,7 +213,7 @@ export function getImageResizeBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -238,7 +240,7 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -261,7 +263,7 @@ export function getImageCropBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -2376,21 +2378,13 @@ async function resolveApiCredentials(args: {
   baseUrl: string;
   token: string;
 }> {
-  const requestedBaseUrl = args.baseUrl
-    ?? (args.env ? resolveEnvironmentBaseUrl(args.env) : undefined);
-
-  if (requestedBaseUrl && args.token) {
-    return {
-      baseUrl: requestedBaseUrl,
-      token: args.token,
-    };
-  }
-
   const config = await loadConfig(args.configPath);
-  const environment = args.env
-    ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
-    ?? config?.activeEnvironment
-    ?? DEFAULT_ENVIRONMENT;
+  const selection = resolveEnvironmentSelection({
+    requestedEnvironment: args.env,
+    configuredEnvironment: config?.activeEnvironment,
+    environmentVariable: process.env.TOOLIST_ENV,
+  });
+  const environment = selection.environment;
   const profile = getProfileForEnvironment(config, environment);
 
   if (!profile?.accessToken && !args.token) {
@@ -2398,7 +2392,11 @@ async function resolveApiCredentials(args: {
   }
 
   return {
-    baseUrl: requestedBaseUrl ?? profile?.baseUrl ?? resolveEnvironmentBaseUrl(environment),
+    baseUrl: args.baseUrl ?? resolveSelectedProfileBaseUrl({
+      environment,
+      profileBaseUrl: profile?.baseUrl,
+      isExplicitHostedSelection: selection.isExplicitHostedSelection,
+    }),
     token: args.token ?? profile!.accessToken!,
   };
 }
@@ -2415,17 +2413,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
     try {
       const loginArgs = parseLoginArgs(rest);
       const config = await loadConfig(loginArgs.configPath);
-      const inferredEnvironment = loginArgs.baseUrl
-        ? undefined
-        : (
-          loginArgs.env
-          ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
-          ?? config?.activeEnvironment
-          ?? DEFAULT_ENVIRONMENT
-        );
+      const selection = resolveEnvironmentSelection({
+        requestedEnvironment: loginArgs.env,
+        configuredEnvironment: config?.activeEnvironment,
+        environmentVariable: process.env.TOOLIST_ENV,
+      });
+      const inferredEnvironment = selection.environment;
       const result = await loginCommand({
         baseUrl: loginArgs.baseUrl
-          ?? resolveEnvironmentBaseUrl(inferredEnvironment ?? DEFAULT_ENVIRONMENT),
+          ?? resolveEnvironmentBaseUrl(inferredEnvironment),
         environment: inferredEnvironment,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
