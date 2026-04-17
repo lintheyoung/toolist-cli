@@ -1,7 +1,14 @@
 import { apiRequest } from '../lib/http.js';
-import { loadConfig, type ToollistConfig } from '../lib/config.js';
 import {
+  getProfileForEnvironment,
+  loadConfig,
+  type ToollistConfig,
+  type ToollistProfile,
+} from '../lib/config.js';
+import {
+  DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
+  resolveEnvironmentName,
   type ToolistEnvironment,
 } from '../lib/environments.js';
 
@@ -41,12 +48,29 @@ function createDefaultDependencies(): WhoamiDependencies {
   };
 }
 
-function getRequiredConfig(config: ToollistConfig | null): ToollistConfig {
-  if (!config?.accessToken) {
+function resolveSelectedEnvironment(
+  requestedEnvironment: ToolistEnvironment | undefined,
+  config: ToollistConfig | null,
+): ToolistEnvironment {
+  if (requestedEnvironment) {
+    return requestedEnvironment;
+  }
+
+  if (process.env.TOOLIST_ENV) {
+    return resolveEnvironmentName(process.env.TOOLIST_ENV);
+  }
+
+  return config?.activeEnvironment ?? DEFAULT_ENVIRONMENT;
+}
+
+function getRequiredProfile(
+  profile: ToollistProfile | null,
+): ToollistProfile {
+  if (!profile?.accessToken) {
     throw new Error('No saved login found. Run `toollist login` first.');
   }
 
-  return config;
+  return profile;
 }
 
 export async function whoamiCommand(
@@ -57,10 +81,12 @@ export async function whoamiCommand(
     ...createDefaultDependencies(),
     ...dependencies,
   };
-  const config = getRequiredConfig(await deps.loadConfig(args.configPath));
+  const config = await deps.loadConfig(args.configPath);
+  const environment = resolveSelectedEnvironment(args.env, config);
+  const profile = getRequiredProfile(getProfileForEnvironment(config, environment));
   const response = await deps.apiRequest<WhoamiResponse>({
-    baseUrl: args.env ? resolveEnvironmentBaseUrl(args.env) : config.baseUrl,
-    token: config.accessToken,
+    baseUrl: profile.baseUrl ?? resolveEnvironmentBaseUrl(environment),
+    token: profile.accessToken,
     method: 'GET',
     path: '/api/cli/me',
   });

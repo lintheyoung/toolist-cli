@@ -3,9 +3,20 @@ import { dirname, join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { randomUUID } from 'node:crypto';
 
-export interface ToollistConfig {
+import {
+  DEFAULT_ENVIRONMENT,
+  type ToolistEnvironment,
+} from './environments.js';
+
+export interface ToollistProfile {
+  environment: ToolistEnvironment;
   baseUrl: string;
   accessToken?: string;
+}
+
+export interface ToollistConfig {
+  activeEnvironment: ToolistEnvironment;
+  profiles: Partial<Record<ToolistEnvironment, ToollistProfile>>;
 }
 
 function getDefaultConfigPath(): string {
@@ -22,26 +33,79 @@ function isNotFoundError(error: unknown): error is NodeJS.ErrnoException {
   return typeof error === 'object' && error !== null && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
+function isEnvironment(value: unknown): value is ToolistEnvironment {
+  return value === 'prod' || value === 'test' || value === 'dev';
+}
+
+function isProfile(value: unknown): value is ToollistProfile {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    isEnvironment((value as ToollistProfile).environment) &&
+    typeof (value as ToollistProfile).baseUrl === 'string' &&
+    (
+      typeof (value as ToollistProfile).accessToken === 'undefined' ||
+      typeof (value as ToollistProfile).accessToken === 'string'
+    )
+  );
+}
+
+function migrateLegacyConfig(parsed: Record<string, unknown>): ToollistConfig | null {
+  if (typeof parsed.baseUrl !== 'string') {
+    return null;
+  }
+
+  return {
+    activeEnvironment: 'prod',
+    profiles: {
+      prod: {
+        environment: 'prod',
+        baseUrl: parsed.baseUrl,
+        accessToken: typeof parsed.accessToken === 'string' ? parsed.accessToken : undefined,
+      },
+    },
+  };
+}
+
+function normalizeConfig(parsed: unknown): ToollistConfig | null {
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const migratedConfig = migrateLegacyConfig(record);
+
+  if (migratedConfig) {
+    return migratedConfig;
+  }
+
+  const profiles: Partial<Record<ToolistEnvironment, ToollistProfile>> = {};
+  const rawProfiles = record.profiles;
+
+  if (typeof rawProfiles === 'object' && rawProfiles !== null) {
+    for (const environment of ['prod', 'test', 'dev'] as const) {
+      const profile = (rawProfiles as Record<string, unknown>)[environment];
+
+      if (isProfile(profile)) {
+        profiles[environment] = profile;
+      }
+    }
+  }
+
+  return {
+    activeEnvironment: isEnvironment(record.activeEnvironment)
+      ? record.activeEnvironment
+      : DEFAULT_ENVIRONMENT,
+    profiles,
+  };
+}
+
 export async function loadConfig(pathOverride?: string): Promise<ToollistConfig | null> {
   const configPath = pathOverride ?? getDefaultConfigPath();
 
   try {
     const contents = await readFile(configPath, 'utf8');
-    const parsed = JSON.parse(contents) as Partial<ToollistConfig>;
-
-    if (typeof parsed.baseUrl !== 'string') {
-      return null;
-    }
-
-    const config: ToollistConfig = {
-      baseUrl: parsed.baseUrl,
-    };
-
-    if (typeof parsed.accessToken === 'string') {
-      config.accessToken = parsed.accessToken;
-    }
-
-    return config;
+    return normalizeConfig(JSON.parse(contents));
   } catch (error) {
     if (isNotFoundError(error)) {
       return null;
@@ -81,4 +145,11 @@ export async function clearConfig(pathOverride?: string): Promise<void> {
       throw error;
     }
   }
+}
+
+export function getProfileForEnvironment(
+  config: ToollistConfig | null,
+  environment: ToolistEnvironment,
+): ToollistProfile | null {
+  return config?.profiles?.[environment] ?? null;
 }

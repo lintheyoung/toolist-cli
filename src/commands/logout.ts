@@ -1,6 +1,13 @@
-import { clearConfig, loadConfig } from '../lib/config.js';
 import {
-  resolveEnvironmentBaseUrl,
+  clearConfig,
+  getProfileForEnvironment,
+  loadConfig,
+  saveConfig,
+  type ToollistConfig,
+} from '../lib/config.js';
+import {
+  DEFAULT_ENVIRONMENT,
+  resolveEnvironmentName,
   type ToolistEnvironment,
 } from '../lib/environments.js';
 
@@ -12,6 +19,7 @@ export interface LogoutCommandArgs {
 export interface LogoutDependencies {
   clearConfig: typeof clearConfig;
   loadConfig: typeof loadConfig;
+  saveConfig: typeof saveConfig;
 }
 
 export interface LogoutCommandResult {
@@ -22,7 +30,40 @@ function createDefaultDependencies(): LogoutDependencies {
   return {
     clearConfig,
     loadConfig,
+    saveConfig,
   };
+}
+
+function resolveSelectedEnvironment(
+  requestedEnvironment: ToolistEnvironment | undefined,
+  config: ToollistConfig | null,
+): ToolistEnvironment {
+  if (requestedEnvironment) {
+    return requestedEnvironment;
+  }
+
+  if (process.env.TOOLIST_ENV) {
+    return resolveEnvironmentName(process.env.TOOLIST_ENV);
+  }
+
+  return config?.activeEnvironment ?? DEFAULT_ENVIRONMENT;
+}
+
+function getNextActiveEnvironment(
+  profiles: ToollistConfig['profiles'],
+  currentEnvironment: ToolistEnvironment,
+): ToolistEnvironment {
+  if (profiles[currentEnvironment]) {
+    return currentEnvironment;
+  }
+
+  for (const environment of ['prod', 'test', 'dev'] as const) {
+    if (profiles[environment]) {
+      return environment;
+    }
+  }
+
+  return DEFAULT_ENVIRONMENT;
 }
 
 export async function logoutCommand(
@@ -33,16 +74,33 @@ export async function logoutCommand(
     ...createDefaultDependencies(),
     ...dependencies,
   };
+  const config = await deps.loadConfig(args.configPath);
 
-  if (args.env) {
-    const config = await deps.loadConfig(args.configPath);
-
-    if (config?.baseUrl && config.baseUrl !== resolveEnvironmentBaseUrl(args.env)) {
-      throw new Error(`Saved login does not target the ${args.env} environment.`);
-    }
+  if (!config) {
+    return {
+      loggedOut: true,
+    };
   }
 
-  await deps.clearConfig(args.configPath);
+  const environment = resolveSelectedEnvironment(args.env, config);
+
+  if (!getProfileForEnvironment(config, environment)) {
+    return {
+      loggedOut: true,
+    };
+  }
+
+  const profiles = { ...config.profiles };
+  delete profiles[environment];
+
+  if (Object.keys(profiles).length === 0) {
+    await deps.clearConfig(args.configPath);
+  } else {
+    await deps.saveConfig({
+      activeEnvironment: getNextActiveEnvironment(profiles, config.activeEnvironment),
+      profiles,
+    }, args.configPath);
+  }
 
   return {
     loggedOut: true,

@@ -20,7 +20,7 @@ import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
-import { loadConfig } from './lib/config.js';
+import { getProfileForEnvironment, loadConfig } from './lib/config.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -2387,14 +2387,19 @@ async function resolveApiCredentials(args: {
   }
 
   const config = await loadConfig(args.configPath);
+  const environment = args.env
+    ?? (process.env.TOOLIST_ENV ? resolveEnvironmentName(process.env.TOOLIST_ENV) : undefined)
+    ?? config?.activeEnvironment
+    ?? DEFAULT_ENVIRONMENT;
+  const profile = getProfileForEnvironment(config, environment);
 
-  if (!config?.accessToken && !args.token) {
+  if (!profile?.accessToken && !args.token) {
     throw new Error('Missing authentication. Pass --token or use a saved login.');
   }
 
   return {
-    baseUrl: requestedBaseUrl ?? config?.baseUrl ?? DEFAULT_BASE_URL,
-    token: args.token ?? config!.accessToken!,
+    baseUrl: requestedBaseUrl ?? profile?.baseUrl ?? resolveEnvironmentBaseUrl(environment),
+    token: args.token ?? profile!.accessToken!,
   };
 }
 

@@ -2,11 +2,21 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { apiRequest } from '../lib/http.js';
 import { openBrowser } from '../lib/browser.js';
-import { saveConfig, type ToollistConfig } from '../lib/config.js';
+import {
+  loadConfig,
+  saveConfig,
+  type ToollistConfig,
+} from '../lib/config.js';
 import { startCallbackServer, type CallbackServer } from '../lib/callback-server.js';
+import {
+  DEFAULT_ENVIRONMENT,
+  resolveEnvironmentBaseUrl,
+  type ToolistEnvironment,
+} from '../lib/environments.js';
 
 export interface LoginCommandArgs {
   baseUrl: string;
+  environment?: ToolistEnvironment;
   clientName?: string;
   configPath?: string;
 }
@@ -29,6 +39,7 @@ export interface LoginDependencies {
   announceBrowserLaunch: (url: string) => Promise<void> | void;
   startCallbackServer: (expectedState: string) => Promise<CallbackServer>;
   apiRequest: typeof apiRequest;
+  loadConfig: typeof loadConfig;
   saveConfig: typeof saveConfig;
   randomUUID: () => string;
   createCodeVerifier: () => string;
@@ -83,11 +94,22 @@ function createDefaultDependencies(): LoginDependencies {
     announceBrowserLaunch: () => undefined,
     startCallbackServer,
     apiRequest,
+    loadConfig,
     saveConfig,
     randomUUID,
     createCodeVerifier: createDefaultCodeVerifier,
     createCodeChallenge: createDefaultCodeChallenge,
   };
+}
+
+function inferEnvironmentFromBaseUrl(baseUrl: string): ToolistEnvironment {
+  for (const environment of ['prod', 'test', 'dev'] as const) {
+    if (baseUrl === resolveEnvironmentBaseUrl(environment)) {
+      return environment;
+    }
+  }
+
+  return DEFAULT_ENVIRONMENT;
 }
 
 export async function loginCommand(
@@ -144,9 +166,22 @@ export async function loginCommand(
     const exchange: LoginExchangePayload = exchangeEnvelope.data;
 
     const baseUrl = exchange.base_url ?? args.baseUrl;
+    const environment = args.environment ?? inferEnvironmentFromBaseUrl(baseUrl);
+    const existingConfig = (await deps.loadConfig(args.configPath)) ?? {
+      activeEnvironment: environment,
+      profiles: {},
+    };
     const config: ToollistConfig = {
-      baseUrl,
-      accessToken: exchange.access_token,
+      ...existingConfig,
+      activeEnvironment: environment,
+      profiles: {
+        ...existingConfig.profiles,
+        [environment]: {
+          environment,
+          baseUrl,
+          accessToken: exchange.access_token,
+        },
+      },
     };
 
     await deps.saveConfig(config, args.configPath);
