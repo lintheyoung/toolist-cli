@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe('login command', () => {
-  it('dispatches login through the CLI and prints the JSON result', async () => {
+  it('dispatches login through the CLI and forwards the selected environment', async () => {
     const loginCommand = vi.fn(async () => ({
       baseUrl: 'https://api.example.com',
       workspace: {
@@ -30,7 +30,7 @@ describe('login command', () => {
     let stdout = '';
     let stderr = '';
 
-    const exitCode = await main(['login', '--json'], {
+    const exitCode = await main(['login', '--env', 'test', '--json'], {
       stdout: (chunk) => {
         stdout += chunk;
       },
@@ -41,7 +41,8 @@ describe('login command', () => {
 
     expect(exitCode).toBe(0);
     expect(loginCommand).toHaveBeenCalledWith({
-      baseUrl: 'https://tooli.st',
+      baseUrl: 'https://test.tooli.st',
+      environment: 'test',
       clientName: undefined,
       configPath: undefined,
     }, {
@@ -134,8 +135,14 @@ describe('login command', () => {
     });
     expect(saveConfig).toHaveBeenCalledWith(
       {
-        baseUrl: 'https://api.example.com',
-        accessToken: 'tgc_cli_secret',
+        activeEnvironment: 'prod',
+        profiles: {
+          prod: {
+            environment: 'prod',
+            baseUrl: 'https://api.example.com',
+            accessToken: 'tgc_cli_secret',
+          },
+        },
       },
       '/tmp/toollist-config.json',
     );

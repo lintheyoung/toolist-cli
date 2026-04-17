@@ -2417,6 +2417,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       const result = await loginCommand({
         baseUrl: loginArgs.baseUrl
           ?? (loginArgs.env ? resolveEnvironmentBaseUrl(loginArgs.env) : DEFAULT_BASE_URL),
+        environment: loginArgs.env,
         clientName: loginArgs.clientName,
         configPath: loginArgs.configPath,
       }, {
