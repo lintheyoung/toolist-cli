@@ -32,6 +32,8 @@ Expected flow:
 
 The shared platform SOP lives in:
 
+- [Delivery Docs Hub](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/delivery/README.md)
+- [One-Page Team Execution Flow](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/delivery/team-execution-one-page.md)
 - [Team Delivery SOP](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/toolist-team-delivery-sop.md)
 - [Environment Runbook](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/environment-runbook.md)
 - [Hosted Test Smoke Checklist](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/test-environment-smoke-checklist.md)

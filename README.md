@@ -166,6 +166,8 @@ validation you performed.
 
 Maintainers should also read:
 
+- [Delivery Docs Hub](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/delivery/README.md)
+- [One-Page Team Execution Flow](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/delivery/team-execution-one-page.md)
 - [Maintainer Guide](./docs/maintainers.md)
 - [Release Handbook](./docs/release-handbook.md)
 
