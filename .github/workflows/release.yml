@@ -7,7 +7,14 @@ on:
   workflow_dispatch:
 
 jobs:
+  pre-release:
+    uses: ./.github/workflows/pre-release.yml
+    with:
+      require_hosted_smoke: true
+    secrets: inherit
+
   publish:
+    needs: pre-release
     runs-on: ubuntu-latest
 
     permissions:
@@ -26,15 +33,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build package
-        run: npm run build
-
-      - name: Verify package contents
-        run: npm pack --dry-run
 
       - name: Publish to npm
         run: npm publish --access public

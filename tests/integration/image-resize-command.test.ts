@@ -409,8 +409,14 @@ describe('image resize command', () => {
       return {
         ...actual,
         loadConfig: vi.fn(async () => ({
-          baseUrl: 'https://saved.example.com',
-          accessToken: 'saved_token_123',
+          activeEnvironment: 'prod',
+          profiles: {
+            prod: {
+              environment: 'prod',
+              baseUrl: 'https://saved.example.com',
+              accessToken: 'saved_token_123',
+            },
+          },
         })),
       };
     });

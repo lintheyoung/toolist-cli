@@ -7,10 +7,12 @@ This handbook captures the minimum steps required to turn the local
 
 The repository is already prepared for:
 
+- local `npm run lint`
 - local `npm test`
 - local `npm run build`
-- local `npm pack --dry-run`
-- GitHub Actions based publish on release publication
+- local packed-install smoke
+- hosted `test` smoke
+- GitHub Actions based pre-release gate before publish
 
 ## Before the first public publish
 
@@ -22,7 +24,8 @@ The repository is already prepared for:
    - `bugs`
 4. Push the repository to GitHub.
 5. Add `NPM_TOKEN` to the GitHub repository secrets.
-6. Create a GitHub release or run the publish workflow manually.
+6. Add `TOOLLIST_TEST_TOKEN` to the GitHub repository secrets.
+7. Create a GitHub release or run the publish workflow manually.
 
 ## Suggested first-time setup
 
@@ -55,28 +58,53 @@ Recommended `package.json` fields once the canonical repo URL exists:
 Run this before pushing a release tag or publishing:
 
 ```bash
+npm run lint
 npm test
 npm run build
-npm pack --dry-run
+npm run verify:pack-install
 ```
 
 Expected:
 
+- TypeScript typecheck passes
 - tests pass
-- TypeScript build passes
-- the packed artifact contains `dist/cli.js`, `README.md`, and `LICENSE`
+- the packed artifact installs cleanly
+- the installed CLI prints root help and command help
+
+To run the hosted `test` smoke locally:
+
+```bash
+TOOLLIST_TEST_TOKEN=<token> npm run smoke:test
+```
+
+This validates the live `test` environment with:
+
+- `whoami`
+- `tools list`
+- `files upload --public`
 
 ## GitHub Actions publishing
 
-The repository includes `.github/workflows/release.yml`.
+The repository includes:
 
-It will:
+- `.github/workflows/pre-release.yml`
+- `.github/workflows/release.yml`
+
+### Pre-release Gate
+
+The pre-release gate runs:
 
 1. install dependencies
-2. run tests
-3. build
-4. verify the npm package contents
-5. publish to npm using `NPM_TOKEN`
+2. run lint
+3. run tests
+4. build
+5. verify packed-install smoke
+6. run hosted `test` smoke when `TOOLLIST_TEST_TOKEN` is available
+
+### Release Publish
+
+The release workflow calls the pre-release gate with hosted smoke required, then
+publishes to npm using `NPM_TOKEN`.
 
 ## Notes
 
