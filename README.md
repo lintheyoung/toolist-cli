@@ -154,6 +154,18 @@ For cross-repo changes:
 4. validate CLI against `--env test`
 5. release to `main` after the hosted platform is ready
 
+## Team Handoff
+
+The shared delivery source of truth lives in the platform repo:
+
+- [Team Delivery SOP](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/toolist-team-delivery-sop.md)
+- [Environment Runbook](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/environment-runbook.md)
+- [Hosted Test Smoke Checklist](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/test-environment-smoke-checklist.md)
+- [Release Checklist](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/release-checklist.md)
+
+When onboarding or handing work off, start from that SOP and treat this CLI
+README as the command and environment reference.
+
 ## Development
 
 ```bash
