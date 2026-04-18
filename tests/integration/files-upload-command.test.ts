@@ -111,6 +111,8 @@ describe('files upload command', () => {
       'upload',
       '--input',
       '/tmp/photo.jpg',
+      '--config-path',
+      '/tmp/toollist-cli-empty-config.json',
       '--token',
       'tgc_cli_secret',
       '--json',
@@ -121,7 +123,7 @@ describe('files upload command', () => {
       input: '/tmp/photo.jpg',
       baseUrl: 'https://tooli.st',
       token: 'tgc_cli_secret',
-      configPath: undefined,
+      configPath: '/tmp/toollist-cli-empty-config.json',
       computeSha256: false,
     });
   });

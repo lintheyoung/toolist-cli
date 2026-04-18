@@ -1,6 +1,8 @@
 # Toollist CLI
 
-Toollist CLI is the standalone, agent-first command-line interface for the Toollist platform.
+Toollist CLI is the public command-line client for Toollist. It gives you a
+fast way to authenticate, upload files, inspect your workspace, and run hosted
+Toollist tools from scripts, terminals, and agent workflows.
 
 ## Install
 
@@ -17,23 +19,29 @@ npm install -g toolist-cli
 toolist --help
 ```
 
-## Usage
+## Quick Start
 
-Authenticate with the platform:
+Authenticate with Toollist:
 
 ```bash
 npx toolist-cli@latest login
 ```
 
-Inspect your current identity:
+Inspect the current identity:
 
 ```bash
 npx toolist-cli@latest whoami
 ```
 
-## Environments
+Upload a public file:
 
-The CLI has three built-in hosted environments:
+```bash
+npx toolist-cli@latest files upload --input ./photo.jpg --public --json
+```
+
+## Hosted Environments
+
+Toollist CLI has three built-in hosted environments:
 
 - `prod` -> `https://tooli.st`
 - `test` -> `https://test.tooli.st`
@@ -44,8 +52,8 @@ order:
 
 1. `--base-url`
 2. `--env`
-3. `TOOLIST_ENV`
-4. Saved config active environment
+3. `TOOLLIST_ENV`
+4. saved config active environment
 5. `prod`
 
 `--base-url` is for self-hosted or custom deployments. Hosted environment
@@ -58,12 +66,13 @@ Examples:
 npx toolist-cli@latest login --env test
 npx toolist-cli@latest whoami --env prod
 TOOLIST_ENV=dev npx toolist-cli@latest files upload --input ./photo.jpg
-npx toolist-cli@latest files upload --input ./photo.jpg --env test
 npx toolist-cli@latest tools list --base-url https://self-hosted.example.com --token $TOOLIST_TOKEN
 ```
 
 After logging in, commands reuse the saved login automatically. You only need
-`--token` when you want to override the saved credentials explicitly.
+`--token` when you want to override saved credentials explicitly.
+
+## Common Commands
 
 Run a high-level image conversion:
 
@@ -75,12 +84,6 @@ Remove a watermark from a single image:
 
 ```bash
 npx toolist-cli@latest image remove-watermark --input ./photo.jpg --wait --output ./photo-clean.jpg
-```
-
-Remove watermarks from a batch of images in a zip:
-
-```bash
-npx toolist-cli@latest image remove-watermark-batch --inputs ./a.jpg ./b.jpg --wait --output ./cleaned-images.zip
 ```
 
 Resize an image and write the derived artifact locally:
@@ -101,10 +104,10 @@ Run a manifest-driven batch:
 npx toolist-cli@latest batch run --manifest ./batch.json
 ```
 
-Upload a public file and receive a `public_url` in the JSON response:
+List available hosted tools:
 
 ```bash
-toolist files upload --input ./photo.jpg --public --json
+npx toolist-cli@latest tools list --env test
 ```
 
 Example manifest:
@@ -144,41 +147,32 @@ Example manifest:
 }
 ```
 
-## Delivery Flow
-
-For cross-repo changes:
-
-1. develop in matching feature branches
-2. validate locally
-3. merge to `staging`
-4. validate CLI against `--env test`
-5. release to `main` after the hosted platform is ready
-
-## Team Handoff
-
-The shared delivery source of truth lives in the platform repo:
-
-- [Team Delivery SOP](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/toolist-team-delivery-sop.md)
-- [Environment Runbook](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/environment-runbook.md)
-- [Hosted Test Smoke Checklist](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/test-environment-smoke-checklist.md)
-- [Release Checklist](https://github.com/lintheyoung/toollist-gateway-app/blob/staging/docs/release-checklist.md)
-
-When onboarding or handing work off, start from that SOP and treat this CLI
-README as the command and environment reference.
-
 ## Development
 
 ```bash
 npm install
+npm run lint
 npm test
 npm run build
 ```
 
 After building, the executable is available at `dist/cli.js`.
 
+## Contributing
+
+Issues and pull requests are welcome. Before opening a release-oriented change,
+make sure you run the local checks above and describe any hosted `test`
+validation you performed.
+
+Maintainers should also read:
+
+- [Maintainer Guide](./docs/maintainers.md)
+- [Release Handbook](./docs/release-handbook.md)
+
 ## Release
 
-See [docs/release-handbook.md](./docs/release-handbook.md) for the checklist to
-push this repo to GitHub and publish it to npm.
+Releases publish to npm through GitHub Actions after the pre-release gate has
+passed. See [docs/release-handbook.md](./docs/release-handbook.md) for the
+maintainer checklist.
 
 Released under the MIT License.

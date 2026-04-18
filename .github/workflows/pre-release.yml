@@ -1,0 +1,108 @@
+name: Pre-release Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      require_hosted_smoke:
+        description: Require hosted test smoke to pass.
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TOOLLIST_TEST_TOKEN:
+        required: false
+
+jobs:
+  verify-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Verify packed install smoke
+        run: npm run verify:pack-install
+
+  hosted-test-smoke-optional:
+    if: ${{ !inputs.require_hosted_smoke && secrets.TOOLLIST_TEST_TOKEN != '' }}
+    needs: verify-package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Run hosted test smoke
+        env:
+          TOOLLIST_TEST_TOKEN: ${{ secrets.TOOLLIST_TEST_TOKEN }}
+          TOOLLIST_TEST_BASE_URL: ${{ vars.TOOLLIST_TEST_BASE_URL }}
+          TOOLLIST_TEST_ENV: ${{ vars.TOOLLIST_TEST_ENV }}
+        run: npm run smoke:test
+
+  hosted-test-smoke-required:
+    if: ${{ inputs.require_hosted_smoke }}
+    needs: verify-package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fail if hosted smoke token is missing
+        if: ${{ secrets.TOOLLIST_TEST_TOKEN == '' }}
+        run: |
+          echo "Missing TOOLLIST_TEST_TOKEN secret for required hosted smoke."
+          exit 1
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Run hosted test smoke
+        env:
+          TOOLLIST_TEST_TOKEN: ${{ secrets.TOOLLIST_TEST_TOKEN }}
+          TOOLLIST_TEST_BASE_URL: ${{ vars.TOOLLIST_TEST_BASE_URL }}
+          TOOLLIST_TEST_ENV: ${{ vars.TOOLLIST_TEST_ENV }}
+        run: npm run smoke:test

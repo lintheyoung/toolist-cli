@@ -26,6 +26,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit",
     "prepack": "npm run build",
+    "verify:pack-install": "node ./scripts/verify-packed-install.mjs",
+    "smoke:test": "node ./scripts/run-hosted-test-smoke.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {

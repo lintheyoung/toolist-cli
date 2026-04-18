@@ -207,6 +207,8 @@ describe('image remove-watermark command', () => {
       'remove-watermark',
       '--input',
       '/tmp/photo.png',
+      '--config-path',
+      '/tmp/toollist-cli-empty-config.json',
       '--token',
       'tgc_cli_secret',
       '--json',
@@ -217,7 +219,7 @@ describe('image remove-watermark command', () => {
       input: '/tmp/photo.png',
       baseUrl: 'https://tooli.st',
       token: 'tgc_cli_secret',
-      configPath: undefined,
+      configPath: '/tmp/toollist-cli-empty-config.json',
     });
     expect(apiRequest).toHaveBeenCalledWith({
       baseUrl: 'https://tooli.st',
