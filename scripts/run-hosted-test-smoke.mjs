@@ -9,8 +9,8 @@ const repoRoot = resolve(scriptDir, '..');
 const cliPath = join(repoRoot, 'dist', 'cli.js');
 
 const token = process.env.TOOLLIST_TEST_TOKEN;
-const environment = process.env.TOOLLIST_TEST_ENV ?? 'test';
-const baseUrl = process.env.TOOLLIST_TEST_BASE_URL;
+const environment = process.env.TOOLLIST_TEST_ENV || 'test';
+const baseUrl = process.env.TOOLLIST_TEST_BASE_URL || undefined;
 const defaultBaseUrl = environment === 'prod'
   ? 'https://tooli.st'
   : environment === 'test'
