@@ -46,27 +46,44 @@ jobs:
         run: npm run verify:pack-install
 
   hosted-test-smoke-optional:
-    if: ${{ !inputs.require_hosted_smoke && secrets.TOOLLIST_TEST_TOKEN != '' }}
+    if: ${{ !inputs.require_hosted_smoke }}
     needs: verify-package
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check hosted smoke token
+        id: hosted-smoke-token
+        env:
+          TOOLLIST_TEST_TOKEN: ${{ secrets.TOOLLIST_TEST_TOKEN }}
+        run: |
+          if [ -n "$TOOLLIST_TEST_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping optional hosted smoke because TOOLLIST_TEST_TOKEN is not configured."
+          fi
+
       - name: Check out repository
+        if: ${{ steps.hosted-smoke-token.outputs.present == 'true' }}
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        if: ${{ steps.hosted-smoke-token.outputs.present == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: ${{ steps.hosted-smoke-token.outputs.present == 'true' }}
         run: npm ci
 
       - name: Build package
+        if: ${{ steps.hosted-smoke-token.outputs.present == 'true' }}
         run: npm run build
 
       - name: Run hosted test smoke
+        if: ${{ steps.hosted-smoke-token.outputs.present == 'true' }}
         env:
           TOOLLIST_TEST_TOKEN: ${{ secrets.TOOLLIST_TEST_TOKEN }}
           TOOLLIST_TEST_BASE_URL: ${{ vars.TOOLLIST_TEST_BASE_URL }}
@@ -80,10 +97,13 @@ jobs:
 
     steps:
       - name: Fail if hosted smoke token is missing
-        if: ${{ secrets.TOOLLIST_TEST_TOKEN == '' }}
+        env:
+          TOOLLIST_TEST_TOKEN: ${{ secrets.TOOLLIST_TEST_TOKEN }}
         run: |
-          echo "Missing TOOLLIST_TEST_TOKEN secret for required hosted smoke."
-          exit 1
+          if [ -z "$TOOLLIST_TEST_TOKEN" ]; then
+            echo "Missing TOOLLIST_TEST_TOKEN secret for required hosted smoke."
+            exit 1
+          fi
 
       - name: Check out repository
         uses: actions/checkout@v4
