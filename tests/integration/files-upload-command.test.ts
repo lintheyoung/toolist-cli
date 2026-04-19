@@ -219,6 +219,76 @@ describe('files upload command', () => {
     });
   });
 
+  it('infers the DOCX mime type for document uploads', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const inputPath = join(tempDir, 'document.docx');
+    const fileContents = Buffer.from('docx bytes');
+    await writeFile(inputPath, fileContents);
+
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          file_id: 'file_docx_123',
+          upload_url: 'https://upload.example.com/file_docx_123',
+          headers: {
+            'x-upload-token': 'abc123',
+          },
+        },
+        request_id: 'req_create_upload_docx_123',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          file: {
+            fileId: 'file_docx_123',
+            status: 'uploaded',
+          },
+        },
+        request_id: 'req_complete_upload_docx_123',
+      });
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    const result = await uploadCommand(
+      {
+        input: inputPath,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        apiRequest,
+      },
+    );
+
+    expect(apiRequest).toHaveBeenNthCalledWith(1, {
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      method: 'POST',
+      path: '/api/v1/files/create-upload',
+      body: {
+        filename: 'document.docx',
+        mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size_bytes: fileContents.length,
+      },
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://upload.example.com/file_docx_123',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: expect.objectContaining({
+          'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        }),
+        body: fileContents,
+      }),
+    );
+    expect(result.mime_type).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+  });
+
   it('computes sha256 only when the upload command is asked to', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const inputPath = join(tempDir, 'photo.jpg');
