@@ -239,6 +239,36 @@ describe('image resize-batch wrapper', () => {
 
     await rm(tempDir, { recursive: true, force: true });
   });
+
+  it('supports glob implementations that resolve to an array of matches', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-resize-batch-'));
+    const first = join(tempDir, 'a.jpg');
+    const second = join(tempDir, 'b.jpg');
+    await writeFile(first, 'a');
+    await writeFile(second, 'b');
+
+    const { buildHomogeneousImageBatchManifest } = await import(
+      '../../src/commands/image/homogeneous-batch-manifest.js'
+    );
+
+    const manifest = await buildHomogeneousImageBatchManifest(
+      {
+        inputGlob: join(tempDir, '*.jpg'),
+        toolName: 'image.resize',
+        idPrefix: 'resize',
+        buildInput: () => ({
+          width: 640,
+        }),
+      },
+      {
+        glob: async () => [first, second],
+      },
+    );
+
+    expect(manifest.items.map((item) => item.input_path)).toEqual([first, second]);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
 });
 
 async function runCli(args: string[]) {

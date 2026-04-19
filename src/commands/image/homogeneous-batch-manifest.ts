@@ -33,9 +33,26 @@ async function expandGlob(
   globFn: typeof glob,
   resolvePath: typeof resolve,
 ): Promise<string[]> {
+  const result = globFn(pattern) as unknown;
+
+  if (
+    result &&
+    typeof result === 'object' &&
+    Symbol.asyncIterator in result
+  ) {
+    const matches: string[] = [];
+
+    for await (const match of result as AsyncIterable<string>) {
+      matches.push(resolvePath(match));
+    }
+
+    return matches;
+  }
+
+  const awaitedMatches = (await result) as Iterable<string>;
   const matches: string[] = [];
 
-  for await (const match of globFn(pattern)) {
+  for (const match of awaitedMatches) {
     matches.push(resolvePath(match));
   }
 
