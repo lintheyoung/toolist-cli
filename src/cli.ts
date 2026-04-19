@@ -3,6 +3,8 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
+import { documentDocxToMarkdownBatchCommand } from './commands/document/docx-to-markdown-batch.js';
+import { documentDocxToMarkdownCommand } from './commands/document/docx-to-markdown.js';
 import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
 import { imageCropBatchCommand } from './commands/image/crop-batch.js';
@@ -107,6 +109,7 @@ export function getRootHelp(): string {
     '  whoami   Show the current identity',
     '  tools    Low-level tool registry commands',
     '  files    Low-level file commands',
+    '  document High-level document commands',
     '  image    High-level image commands',
     '  jobs     Low-level job commands',
     '  batch    Manifest-driven batch commands',
@@ -149,6 +152,67 @@ export function getFilesHelp(): string {
     'Options:',
     '  --sha256  Compute and send a client-side sha256 during upload completion',
     '  --public  Request a public upload URL and public file access',
+  ].join('\n') + '\n';
+}
+
+export function getDocumentHelp(): string {
+  return [
+    'toollist document',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  docx-to-markdown        Convert a DOCX file into a Markdown bundle through the API',
+    '  docx-to-markdown-batch  Convert zipped DOCX inputs into Markdown bundles through the API',
+  ].join('\n') + '\n';
+}
+
+export function getDocumentDocxToMarkdownHelp(): string {
+  return [
+    'toollist document docx-to-markdown',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --input        DOCX file path',
+    '  --wait         Wait for the conversion job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download bundle.zip to a local path',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getDocumentDocxToMarkdownBatchHelp(): string {
+  return [
+    'toollist document docx-to-markdown-batch',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --inputs       One or more DOCX input file paths',
+    '  --input-glob   Glob pattern for DOCX input files',
+    '  --wait         Wait for the batch conversion job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download results.zip to a local path',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -1078,6 +1142,9 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
 
   return parsed;
 }
+
+const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
+const parseDocumentDocxToMarkdownBatchArgs = parseImageRemoveWatermarkBatchArgs;
 
 function parseImageResizeArgs(args: string[]): {
   input?: string;
@@ -2571,6 +2638,78 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Files upload failed.'}\n`);
+        return 1;
+      }
+    }
+  }
+
+  if (command === 'document') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getDocumentHelp());
+      return 0;
+    }
+
+    if (subcommand === 'docx-to-markdown' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getDocumentDocxToMarkdownHelp());
+      return 0;
+    }
+
+    if (subcommand === 'docx-to-markdown-batch' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getDocumentDocxToMarkdownBatchHelp());
+      return 0;
+    }
+
+    if (subcommand === 'docx-to-markdown') {
+      try {
+        const parsed = parseDocumentDocxToMarkdownArgs(commandArgs);
+
+        if (!parsed.input) {
+          io.stderr('Missing required option: --input\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await documentDocxToMarkdownCommand({
+          input: parsed.input,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Document docx-to-markdown failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'docx-to-markdown-batch') {
+      try {
+        const parsed = parseDocumentDocxToMarkdownBatchArgs(commandArgs);
+
+        if ((!parsed.inputs || parsed.inputs.length === 0) && !parsed.inputGlob) {
+          io.stderr('Missing required option: --inputs or --input-glob\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await documentDocxToMarkdownBatchCommand({
+          inputs: parsed.inputs,
+          inputGlob: parsed.inputGlob,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Document docx-to-markdown-batch failed.'}\n`);
         return 1;
       }
     }
