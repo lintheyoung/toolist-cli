@@ -1,5 +1,5 @@
-import { glob } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { glob } from 'glob';
 
 import type {
   BatchManifest,
@@ -46,7 +46,7 @@ async function expandGlob(
       matches.push(resolvePath(match));
     }
 
-    return matches;
+    return matches.sort();
   }
 
   const awaitedMatches = (await result) as Iterable<string>;
@@ -56,7 +56,7 @@ async function expandGlob(
     matches.push(resolvePath(match));
   }
 
-  return matches;
+  return matches.sort();
 }
 
 function toDeterministicItemId(prefix: string, index: number): string {
