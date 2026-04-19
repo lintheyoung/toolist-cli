@@ -1,4 +1,4 @@
-import { glob } from 'node:fs/promises';
+import { glob } from 'glob';
 
 import { runBatchCommand, type BatchRunResult } from '../batch/run.js';
 import type { BatchManifest, BatchManifestDefaults } from '../../lib/batch-manifest.js';
