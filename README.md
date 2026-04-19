@@ -98,6 +98,18 @@ Crop an image to a bounding box and download the result:
 npx toolist-cli@latest image crop --input ./photo.jpg --x 120 --y 80 --width 640 --height 480 --to png --sync --wait --output ./photo-crop.png
 ```
 
+Convert a DOCX file into a Markdown bundle:
+
+```bash
+npx toolist-cli@latest document docx-to-markdown --input ./document.docx --wait --output ./bundle.zip
+```
+
+Convert multiple DOCX files into Markdown bundles:
+
+```bash
+npx toolist-cli@latest document docx-to-markdown-batch --inputs ./chapter-1.docx ./chapter-2.docx --wait --output ./results.zip
+```
+
 Run a manifest-driven batch:
 
 ```bash
