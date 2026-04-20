@@ -30,6 +30,13 @@
 - GREEN: `npm run lint`
 - GREEN: `npm run build`
 - GREEN: `npm run verify:pack-install`
+- `git fetch origin staging`
+- `git rev-list --left-right --count HEAD...origin/staging` reported `2 0`
+- Post-sync GREEN: `npm run lint`
+- Post-sync GREEN: `npm test`
+- Post-sync GREEN: `npm run build`
+- Post-sync GREEN: `git diff --check origin/staging...HEAD`
+- Post-sync GREEN: `npm run verify:pack-install`
 
 ## Validation Results
 
@@ -47,6 +54,12 @@
 - GREEN: full `npm run lint` passed.
 - GREEN: full `npm run build` passed.
 - GREEN: `npm run verify:pack-install` passed.
+- Sync: branch was current with `origin/staging` and only ahead by local commits (`2 0`).
+- GREEN: post-sync `npm run lint` passed.
+- GREEN: post-sync `npm test` passed with 28 files and 165 tests.
+- GREEN: post-sync `npm run build` passed.
+- GREEN: post-sync `git diff --check origin/staging...HEAD` passed.
+- GREEN: post-sync `npm run verify:pack-install` passed.
 
 ## Blockers
 
