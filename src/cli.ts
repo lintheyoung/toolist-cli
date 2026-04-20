@@ -9,6 +9,7 @@ import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
 import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
+import { imageRemoveBackgroundCommand } from './commands/image/remove-background.js';
 import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
 import { imageRemoveWatermarkBatchCommand } from './commands/image/remove-watermark-batch.js';
 import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
@@ -117,6 +118,7 @@ export function getRootHelp(): string {
     '',
     'Discover supported tools:',
     '  toollist tools list',
+    '  toollist image remove-background --input photo.png --wait --output photo-background-removed.png',
     '',
     'Options:',
     '  -h, --help  Show help',
@@ -225,6 +227,7 @@ export function getImageHelp(): string {
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
@@ -235,12 +238,35 @@ export function getImageHelp(): string {
     'Commands:',
     '  convert  Convert an image format through the API',
     '  convert-batch  Convert multiple images through the batch wrapper',
+    '  remove-background  Remove the background from an image through the API',
     '  remove-watermark  Remove a watermark from an image through the API',
     '  remove-watermark-batch  Remove watermarks from a zipped image batch through the API',
     '  resize   Resize an image through the API',
     '  resize-batch  Resize multiple images through the batch wrapper',
     '  crop-batch  Crop multiple images through the batch wrapper',
     '  crop     Crop an image through the API',
+  ].join('\n') + '\n';
+}
+
+export function getImageRemoveBackgroundHelp(): string {
+  return [
+    'toollist image remove-background',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --input        Image file path',
+    '  --wait         Wait for the background removal job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download background-removed PNG to a local path',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -1145,6 +1171,7 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
 
 const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
 const parseDocumentDocxToMarkdownBatchArgs = parseImageRemoveWatermarkBatchArgs;
+const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
 
 function parseImageResizeArgs(args: string[]): {
   input?: string;
@@ -2743,6 +2770,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       return 0;
     }
 
+    if (subcommand === 'remove-background' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageRemoveBackgroundHelp());
+      return 0;
+    }
+
     if (subcommand === 'convert') {
       try {
         const parsed = parseImageConvertArgs(commandArgs);
@@ -2799,6 +2831,32 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image remove-watermark failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'remove-background') {
+      try {
+        const parsed = parseImageRemoveBackgroundArgs(commandArgs);
+
+        if (!parsed.input) {
+          io.stderr('Missing required option: --input\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageRemoveBackgroundCommand({
+          input: parsed.input,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image remove-background failed.'}\n`);
         return 1;
       }
     }
