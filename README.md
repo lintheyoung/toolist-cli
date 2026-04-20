@@ -86,6 +86,12 @@ Remove a watermark from a single image:
 npx toolist-cli@latest image remove-watermark --input ./photo.jpg --wait --output ./photo-clean.jpg
 ```
 
+Remove the background from a single image:
+
+```bash
+npx toolist-cli@latest image remove-background --input ./photo.png --wait --output ./photo-background-removed.png
+```
+
 Resize an image and write the derived artifact locally:
 
 ```bash
