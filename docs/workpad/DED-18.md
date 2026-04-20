@@ -30,6 +30,11 @@ Add `toolist markdown upload-images` to upload local Markdown images and frontma
 - Post-sync: `npm run build`
 - Post-sync: `npm run verify:pack-install`
 - Post-sync: `node dist/cli.js markdown upload-images --input "$tmpdir/article.md" --in-place --public --env test --json`
+- Final self-review: `git diff --check origin/staging...HEAD`
+- Final self-review: `npm test -- tests/integration/markdown-upload-images-command.test.ts && npm run lint`
+- Final self-review: `npm test`
+- Final self-review: `npm run build && npm run verify:pack-install`
+- Final self-review: `node dist/cli.js markdown upload-images --input "$tmpdir/article.md" --in-place --public --env test --json`
 
 ## Validation Results
 
@@ -46,6 +51,12 @@ Add `toolist markdown upload-images` to upload local Markdown images and frontma
 - Post-sync build: passed.
 - Post-sync packaged install verification: passed.
 - Post-sync hosted smoke: passed against `--env test`, uploading a temporary Markdown image and rewriting it to `https://img-test.tooli.st/public/files/file_c191c6e6dde340bcbbbd4b409b11bba0/433fde3ed82b4d9e9d1302596b779f14.png`.
+- Final diff whitespace check: passed.
+- Final targeted command tests: 5 passed.
+- Final TypeScript lint: passed.
+- Final full test suite: 29 files passed, 170 tests passed.
+- Final build and packaged install verification: passed.
+- Final hosted smoke: passed against `--env test`, uploading a temporary Markdown image and rewriting it to `https://img-test.tooli.st/public/files/file_4a8c62d39a4d48e69da55102b6ea57ce/540aebc2536644f7b6319f92371fb247.png`.
 
 ## Blockers
 

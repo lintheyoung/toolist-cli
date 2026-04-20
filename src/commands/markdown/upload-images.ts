@@ -209,12 +209,17 @@ function findMarkdownImageReferences(markdownPath: string, content: string): {
   imageLinksFound: number;
 } {
   const references: LocalImageReference[] = [];
+  const frontmatterEnd = findFrontmatterEnd(content) ?? 0;
   let imageLinksFound = 0;
   let match: RegExpExecArray | null;
 
   MARKDOWN_IMAGE_PATTERN.lastIndex = 0;
 
   while ((match = MARKDOWN_IMAGE_PATTERN.exec(content)) !== null) {
+    if (match.index < frontmatterEnd) {
+      continue;
+    }
+
     const rawDestination = match[1]!;
     const destination = parseMarkdownDestination(rawDestination);
 
@@ -389,6 +394,22 @@ export async function markdownUploadImagesCommand(
   args: MarkdownUploadImagesCommandArgs,
   dependencies: Partial<MarkdownUploadImagesDependencies> = {},
 ): Promise<MarkdownUploadImagesReport> {
+  if (args.input && args.root) {
+    throw new Error('Pass either --input or --root, not both.');
+  }
+
+  if (!args.input && !args.root) {
+    throw new Error('Missing required option: --input or --root');
+  }
+
+  if (!args.inPlace) {
+    throw new Error('Missing required option: --in-place');
+  }
+
+  if (!args.public) {
+    throw new Error('Missing required option: --public');
+  }
+
   const deps = {
     ...createDefaultDependencies(),
     ...dependencies,
