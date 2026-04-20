@@ -140,10 +140,6 @@ export async function imageRemoveBackgroundCommand(
       idempotency_key: deps.randomUUID(),
       input: {
         input_file_id: sourceFile.file_id,
-        background_type: 'rgba',
-        format: 'png',
-        threshold: 0,
-        reverse: false,
       },
     },
   });

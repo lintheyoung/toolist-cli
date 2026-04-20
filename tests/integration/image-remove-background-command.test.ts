@@ -54,7 +54,7 @@ describe('image remove-background command', () => {
     expect(result.stdout).toContain('--output       Download background-removed PNG to a local path');
   });
 
-  it('creates an image.remove_background job with fixed v1 gateway options', async () => {
+  it('creates an image.remove_background job with the uploaded source file', async () => {
     const uploadCommand = vi.fn(async () => ({
       file_id: 'file_source_123',
       upload_url: 'https://upload.example.com/file_source_123',
@@ -125,10 +125,6 @@ describe('image remove-background command', () => {
         idempotency_key: expect.any(String),
         input: {
           input_file_id: 'file_source_123',
-          background_type: 'rgba',
-          format: 'png',
-          threshold: 0,
-          reverse: false,
         },
       }),
     });
@@ -231,10 +227,6 @@ describe('image remove-background command', () => {
       toolVersion: '2026-04-20',
       input: {
         input_file_id: 'file_source_123',
-        background_type: 'rgba',
-        format: 'png',
-        threshold: 0,
-        reverse: false,
       },
       result: {
         output: {
@@ -309,10 +301,6 @@ describe('image remove-background command', () => {
       toolVersion: '2026-04-20',
       input: {
         input_file_id: 'file_source_123',
-        background_type: 'rgba',
-        format: 'png',
-        threshold: 0,
-        reverse: false,
       },
       result: {
         output: {

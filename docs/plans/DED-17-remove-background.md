@@ -8,7 +8,7 @@ Add `toolist image remove-background` using the hosted `image.remove_background`
 
 - Mirror the single-image async flow from `image remove-watermark`.
 - Add integration coverage first for help, create job, wait, and output download.
-- Keep advanced Replicate options private for v1 by hardcoding the requested gateway input fields.
+- Keep advanced Replicate options private for v1; the hosted gateway owns those fixed defaults and the CLI only sends `input_file_id`.
 
 ## Tasks
 
