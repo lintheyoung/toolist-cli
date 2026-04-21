@@ -16,6 +16,7 @@ import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
+import { markdownUploadImagesCommand } from './commands/markdown/upload-images.js';
 import { runBatchCommand } from './commands/batch/run.js';
 import { uploadCommand } from './commands/files/upload.js';
 import { getJobCommand } from './commands/jobs/get.js';
@@ -110,6 +111,7 @@ export function getRootHelp(): string {
     '  whoami   Show the current identity',
     '  tools    Low-level tool registry commands',
     '  files    Low-level file commands',
+    '  markdown Markdown content commands',
     '  document High-level document commands',
     '  image    High-level image commands',
     '  jobs     Low-level job commands',
@@ -154,6 +156,44 @@ export function getFilesHelp(): string {
     'Options:',
     '  --sha256  Compute and send a client-side sha256 during upload completion',
     '  --public  Request a public upload URL and public file access',
+  ].join('\n') + '\n';
+}
+
+export function getMarkdownHelp(): string {
+  return [
+    'toollist markdown',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  upload-images  Upload local Markdown images and rewrite them to public URLs',
+  ].join('\n') + '\n';
+}
+
+export function getMarkdownUploadImagesHelp(): string {
+  return [
+    'toollist markdown upload-images',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --input        Markdown file path for single-file mode',
+    '  --root         Root directory for batch mode',
+    '  --glob         Glob pattern used with --root (defaults to *.md)',
+    '  --in-place     Write updated Markdown back to the source file',
+    '  --public       Required safety flag for public image uploads',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -708,6 +748,141 @@ function parseUploadArgs(args: string[]): {
 
     if (flag === '--sha256') {
       parsed.computeSha256 = true;
+      continue;
+    }
+
+    if (flag === '--public') {
+      parsed.public = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseMarkdownUploadImagesArgs(args: string[]): {
+  input?: string;
+  root?: string;
+  glob?: string;
+  inPlace?: boolean;
+  public?: boolean;
+  baseUrl?: string;
+  env?: ToolistEnvironment;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    input?: string;
+    root?: string;
+    glob?: string;
+    inPlace?: boolean;
+    public?: boolean;
+    baseUrl?: string;
+    env?: ToolistEnvironment;
+    token?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--input') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.input = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--root') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.root = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--glob') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.glob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--in-place') {
+      parsed.inPlace = true;
       continue;
     }
 
@@ -2665,6 +2840,62 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Files upload failed.'}\n`);
+        return 1;
+      }
+    }
+  }
+
+  if (command === 'markdown') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getMarkdownHelp());
+      return 0;
+    }
+
+    if (subcommand === 'upload-images' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getMarkdownUploadImagesHelp());
+      return 0;
+    }
+
+    if (subcommand === 'upload-images') {
+      try {
+        const parsed = parseMarkdownUploadImagesArgs(commandArgs);
+
+        if (parsed.input && parsed.root) {
+          io.stderr('Pass either --input or --root, not both.\n');
+          return 1;
+        }
+
+        if (!parsed.input && !parsed.root) {
+          io.stderr('Missing required option: --input or --root\n');
+          return 1;
+        }
+
+        if (!parsed.inPlace) {
+          io.stderr('Missing required option: --in-place\n');
+          return 1;
+        }
+
+        if (!parsed.public) {
+          io.stderr('Missing required option: --public\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await markdownUploadImagesCommand({
+          input: parsed.input,
+          root: parsed.root,
+          glob: parsed.glob,
+          inPlace: true,
+          public: true,
+          ...credentials,
+          configPath: parsed.configPath,
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Markdown upload-images failed.'}\n`);
         return 1;
       }
     }
