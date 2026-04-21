@@ -3,6 +3,7 @@ import { rm, writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
+import { assertJobSucceeded } from '../../lib/job-errors.js';
 import { createZipBatchInput, type CreateZipBatchInputResult } from '../../lib/zip-batch-input.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
@@ -186,6 +187,8 @@ export async function imageRemoveWatermarkBatchCommand(
           timeoutSeconds: args.timeoutSeconds ?? 60,
           configPath: args.configPath,
         });
+
+    assertJobSucceeded(job);
 
     if (args.output) {
       const outputFileId = getOutputFileId(job);

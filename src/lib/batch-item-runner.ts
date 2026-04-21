@@ -6,6 +6,7 @@ import { uploadCommand } from '../commands/files/upload.js';
 import { waitJobCommand } from '../commands/jobs/wait.js';
 import { apiRequest } from './http.js';
 import { isCliError } from './errors.js';
+import { assertJobSucceeded } from './job-errors.js';
 import type { BatchManifest } from './batch-manifest.js';
 import { saveBatchState, type BatchItemState, type BatchState } from './batch-state.js';
 
@@ -270,6 +271,8 @@ export async function runBatchItem(
         status: toBatchStatus(job.status),
       });
     }
+
+    assertJobSucceeded(job);
 
     const outputFileId = getOutputFileId(job);
     let outputPath: string | undefined;

@@ -585,6 +585,96 @@ describe('batch item runner', () => {
     await rm(outputDir, { recursive: true, force: true });
   });
 
+  it('records backend job failure details for waited batch items', async () => {
+    const state = createState();
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_123',
+      upload_url: 'https://upload.example.com/file_123',
+      headers: {
+        'content-type': 'image/jpeg',
+      },
+      filename: 'photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_batch_failed_402',
+          status: 'queued',
+          toolName: 'image.resize',
+          toolVersion: '2026-04-14',
+        },
+      },
+      request_id: 'req_create_job_batch_failed_402',
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_batch_failed_402',
+      status: 'failed',
+      toolName: 'image.resize',
+      toolVersion: '2026-04-14',
+      errorCode: 'PROVIDER_REQUEST_FAILED',
+      errorMessage: 'Replicate request failed with status 402',
+      progress: {
+        externalTaskId: 'replicate_prediction_batch_123',
+        providerStatus: 'failed',
+      },
+    }));
+
+    const saveBatchState = vi.fn(async () => undefined);
+
+    const result = await runBatchItem(
+      {
+        item: {
+          id: 'resize-1',
+          tool_name: 'image.resize',
+          input_path: '/tmp/photo.jpg',
+          input: {
+            width: 1200,
+          },
+        },
+        defaults: {
+          wait: true,
+          download_outputs: true,
+          output_dir: '/tmp/toollist-batch-output',
+        },
+        credentials: {
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        state,
+        statePath: '/tmp/batch-state.json',
+      },
+      {
+        apiRequest,
+        uploadCommand,
+        waitJobCommand,
+        fetch: vi.fn(),
+        writeFile: vi.fn(),
+        mkdir: vi.fn(),
+        randomUUID: vi.fn(() => 'uuid_failed'),
+        saveBatchState,
+      },
+    );
+
+    expect(result.status).toBe('failed');
+    expect(result.error?.message).toContain('Job failed: job_batch_failed_402');
+    expect(result.error?.message).toContain('Status: failed');
+    expect(result.error?.message).toContain('Error code: PROVIDER_REQUEST_FAILED');
+    expect(result.error?.message).toContain('Error message: Replicate request failed with status 402');
+    expect(result.error?.message).toContain('External task id: replicate_prediction_batch_123');
+    expect(result.error?.message).toContain('Provider status: failed');
+    expect(result.error?.message).not.toContain('An unexpected error occurred.');
+    expect(result.error?.message).not.toContain('did not produce an output file');
+  });
+
   it('uses input_file_id without uploading again', async () => {
     const state = createState();
 
