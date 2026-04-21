@@ -2,6 +2,7 @@ import { getJobCommand, type GetJobCommandArgs, type GetJobCommandResult } from 
 
 export interface WaitJobCommandArgs extends GetJobCommandArgs {
   timeoutSeconds: number;
+  onStatus?: (status: string, job: GetJobCommandResult) => void;
 }
 
 export interface WaitJobDependencies {
@@ -45,6 +46,7 @@ export async function waitJobCommand(
   const startedAt = deps.now();
   const timeoutMs = args.timeoutSeconds * 1000;
   const deadline = startedAt + timeoutMs;
+  let lastStatus: string | undefined;
 
   while (true) {
     const now = deps.now();
@@ -59,6 +61,11 @@ export async function waitJobCommand(
       token: args.token,
       configPath: args.configPath,
     });
+
+    if (job.status !== lastStatus) {
+      lastStatus = job.status;
+      args.onStatus?.(job.status, job);
+    }
 
     if (isTerminalStatus(job.status)) {
       if (deps.now() >= deadline) {

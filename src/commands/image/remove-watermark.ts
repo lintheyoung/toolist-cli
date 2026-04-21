@@ -3,6 +3,10 @@ import { writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
+import {
+  silentProgressReporter,
+  type ProgressReporter,
+} from '../../lib/progress-reporter.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
 
@@ -68,6 +72,7 @@ export interface ImageRemoveWatermarkDependencies {
   fetch: typeof fetch;
   writeFile: typeof writeFile;
   randomUUID: typeof randomUUID;
+  progress: ProgressReporter;
 }
 
 type CreateJobResponse = {
@@ -85,6 +90,7 @@ function createDefaultDependencies(): ImageRemoveWatermarkDependencies {
     fetch: globalThis.fetch.bind(globalThis),
     writeFile,
     randomUUID,
+    progress: silentProgressReporter,
   };
 }
 
@@ -124,13 +130,16 @@ export async function imageRemoveWatermarkCommand(
     ...dependencies,
   };
 
+  deps.progress.uploadingInput();
   const sourceFile = await deps.uploadCommand({
     input: args.input,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
   });
+  deps.progress.uploadedFile(sourceFile.file_id);
 
+  deps.progress.creatingJob();
   const createJobResponse = await deps.apiRequest<CreateJobResponse>({
     baseUrl: args.baseUrl,
     token: args.token,
@@ -144,22 +153,31 @@ export async function imageRemoveWatermarkCommand(
       },
     },
   });
+  const createdJob = createJobResponse.data.job;
+  deps.progress.createdJob(createdJob.id);
 
   const shouldWait = args.wait || Boolean(args.output);
 
   if (!shouldWait) {
-    return createJobResponse.data.job;
+    return createdJob;
   }
 
-  const job = isTerminalJobStatus(createJobResponse.data.job.status)
-    ? createJobResponse.data.job
+  deps.progress.waitingForJob();
+  deps.progress.jobStatus(createdJob.status);
+
+  const job = isTerminalJobStatus(createdJob.status)
+    ? createdJob
     : await deps.waitJobCommand({
-        jobId: createJobResponse.data.job.id,
+        jobId: createdJob.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
+        onStatus: (status) => {
+          deps.progress.jobStatus(status);
+        },
       });
+  deps.progress.jobStatus(job.status);
 
   assertJobSucceeded(job);
 
@@ -170,6 +188,7 @@ export async function imageRemoveWatermarkCommand(
       throw new Error('The watermark removal job did not produce an output file.');
     }
 
+    deps.progress.downloadingOutput(outputFileId);
     await downloadOutputFile(
       {
         baseUrl: args.baseUrl,
@@ -179,6 +198,7 @@ export async function imageRemoveWatermarkCommand(
       outputFileId,
       deps,
     );
+    deps.progress.savedOutput(args.output);
   }
 
   return job;

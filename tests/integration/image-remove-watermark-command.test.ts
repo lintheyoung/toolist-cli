@@ -49,22 +49,44 @@ describe('image remove-watermark command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_watermark_123',
-      status: 'succeeded',
-      toolName: 'image.gemini_nb_remove_watermark',
-      toolVersion: '2026-04-15',
-      input: {
-        input_file_id: 'file_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        args.onStatus?.('dispatching', {
+          id: 'job_watermark_123',
+          status: 'dispatching',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_watermark_123',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        return {
+          id: 'job_watermark_123',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+          input: {
+            input_file_id: 'file_source_123',
+          },
+          result: {
+            output: {
+              outputFileId: 'file_output_123',
+              mimeType: 'image/png',
+              storageKey: 'ws/77/output/job_watermark_123/output.png',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          outputFileId: 'file_output_123',
-          mimeType: 'image/png',
-          storageKey: 'ws/77/output/job_watermark_123/output.png',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -138,6 +160,7 @@ describe('image remove-watermark command', () => {
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_output_123/download',
@@ -164,7 +187,18 @@ describe('image remove-watermark command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: dispatching',
+      'Status: succeeded',
+      'Downloading output: file_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
   });
 
   it('defaults remove-watermark to the hosted Toolist base URL when --base-url is omitted', async () => {
@@ -356,7 +390,16 @@ describe('image remove-watermark command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+      'Waiting for job...',
+      'Status: succeeded',
+      'Downloading output: file_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
   });
 
   it('returns immediately when neither --wait nor --output is set', async () => {
@@ -440,7 +483,12 @@ describe('image remove-watermark command', () => {
       toolName: 'image.gemini_nb_remove_watermark',
       toolVersion: '2026-04-15',
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+    ]);
   });
 
   it('fails when the downloaded output cannot be retrieved after waiting', async () => {
@@ -524,6 +572,8 @@ describe('image remove-watermark command', () => {
     ]);
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr).toContain('Downloading output: file_output_123');
     expect(result.stderr).toContain('Failed to download watermark-removed file file_output_123.');
     expect(waitJobCommand).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -606,6 +656,11 @@ describe('image remove-watermark command', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Uploading input...');
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr.indexOf('Status: failed')).toBeLessThan(
+      result.stderr.indexOf('Job failed: job_watermark_failed_402'),
+    );
     expect(result.stderr).toContain('Job failed: job_watermark_failed_402');
     expect(result.stderr).toContain('Status: failed');
     expect(result.stderr).toContain('Error code: PROVIDER_REQUEST_FAILED');
