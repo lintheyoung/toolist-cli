@@ -177,6 +177,7 @@ describe('files upload command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/create-upload',
+      stage: 'Create upload request failed',
       body: {
         filename: 'photo.jpg',
         mime_type: 'image/jpeg',
@@ -200,6 +201,7 @@ describe('files upload command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/file_123/complete',
+      stage: 'Complete upload request failed',
       body: undefined,
     });
 
@@ -268,6 +270,7 @@ describe('files upload command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/create-upload',
+      stage: 'Create upload request failed',
       body: {
         filename: 'document.docx',
         mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -339,9 +342,49 @@ describe('files upload command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/file_123/complete',
+      stage: 'Complete upload request failed',
       body: {
         sha256: createHash('sha256').update(fileContents).digest('hex'),
       },
     });
+  });
+
+  it('adds upload stage context to presigned PUT transport failures', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const inputPath = join(tempDir, 'photo.jpg');
+    const fileContents = Buffer.from('hello world');
+    await writeFile(inputPath, fileContents);
+
+    const fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        file_id: 'file_123',
+        upload_url: 'https://upload.example.com/file_123',
+        headers: {
+          'content-type': 'image/jpeg',
+        },
+      },
+      request_id: 'req_create_upload_123',
+    }));
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    await expect(
+      uploadCommand(
+        {
+          input: inputPath,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          apiRequest,
+        },
+      ),
+    ).rejects.toThrow('Upload request failed: fetch failed');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

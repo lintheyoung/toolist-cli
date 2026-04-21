@@ -418,6 +418,95 @@ describe('jobs commands', () => {
     });
   });
 
+  it('retries a transient polling failure and continues waiting', async () => {
+    const getJob = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({
+        id: 'job_123',
+        status: 'succeeded',
+        toolName: 'image.convert_format',
+        toolVersion: '2026-04-12',
+      });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result.status).toBe('succeeded');
+    expect(getJob).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('adds polling stage context after retry exhaustion', async () => {
+    const getJob = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 120,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => 0,
+        },
+      ),
+    ).rejects.toThrow('Job polling failed: fetch failed');
+    expect(getJob).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledWith(1000);
+    expect(sleep).toHaveBeenCalledWith(3000);
+  });
+
+  it('caps polling retry delay to the remaining timeout', async () => {
+    const getJob = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    let currentTime = 0;
+    const sleep = vi.fn(async (ms: number) => {
+      currentTime += ms;
+    });
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 0.5,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => currentTime,
+        },
+      ),
+    ).rejects.toThrow('Timed out waiting for job job_123 after 0.5 seconds.');
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
   it('notifies status changes once while waiting for a job', async () => {
     const queuedJob = {
       id: 'job_123',

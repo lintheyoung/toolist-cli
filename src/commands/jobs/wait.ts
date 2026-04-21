@@ -1,4 +1,10 @@
 import { getJobCommand, type GetJobCommandArgs, type GetJobCommandResult } from './get.js';
+import {
+  NETWORK_RETRY_ATTEMPTS,
+  NETWORK_RETRY_DELAYS_MS,
+  withRetry,
+} from '../../lib/retry.js';
+import { isCliError } from '../../lib/errors.js';
 
 export interface WaitJobCommandArgs extends GetJobCommandArgs {
   timeoutSeconds: number;
@@ -34,6 +40,13 @@ function createTimeoutError(jobId: string, timeoutSeconds: number): Error {
   return new Error(`Timed out waiting for job ${jobId} after ${timeoutSeconds} seconds.`);
 }
 
+function isTimeoutError(error: unknown, jobId: string, timeoutSeconds: number): boolean {
+  return (
+    error instanceof Error &&
+    error.message === createTimeoutError(jobId, timeoutSeconds).message
+  );
+}
+
 export async function waitJobCommand(
   args: WaitJobCommandArgs,
   dependencies: Partial<WaitJobDependencies> = {},
@@ -55,11 +68,34 @@ export async function waitJobCommand(
       throw createTimeoutError(args.jobId, args.timeoutSeconds);
     }
 
-    const job = await deps.getJob({
-      jobId: args.jobId,
-      baseUrl: args.baseUrl,
-      token: args.token,
-      configPath: args.configPath,
+    const job = await withRetry({
+      stage: 'Job polling failed',
+      attempts: NETWORK_RETRY_ATTEMPTS,
+      delaysMs: NETWORK_RETRY_DELAYS_MS,
+      sleep: async (ms) => {
+        const remainingMs = deadline - deps.now();
+
+        if (remainingMs <= 0) {
+          return;
+        }
+
+        await deps.sleep(Math.min(ms, remainingMs));
+      },
+      shouldRetry: (error) =>
+        !isCliError(error) && !isTimeoutError(error, args.jobId, args.timeoutSeconds),
+      fn: () => {
+        if (deps.now() >= deadline) {
+          throw createTimeoutError(args.jobId, args.timeoutSeconds);
+        }
+
+        return deps.getJob({
+          jobId: args.jobId,
+          baseUrl: args.baseUrl,
+          token: args.token,
+          configPath: args.configPath,
+          stage: 'Job polling failed',
+        });
+      },
     });
 
     if (job.status !== lastStatus) {

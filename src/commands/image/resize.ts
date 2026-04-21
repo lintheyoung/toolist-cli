@@ -3,6 +3,11 @@ import { writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
+import {
+  NETWORK_RETRY_ATTEMPTS,
+  NETWORK_RETRY_DELAYS_MS,
+  withRetry,
+} from '../../lib/retry.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
 
@@ -135,10 +140,16 @@ async function downloadOutputFile(
     return;
   }
 
-  const response = await dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-    headers: {
-      authorization: `Bearer ${args.token}`,
-    },
+  const response = await withRetry({
+    stage: 'Output download failed',
+    attempts: NETWORK_RETRY_ATTEMPTS,
+    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    fn: () =>
+      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
+        headers: {
+          authorization: `Bearer ${args.token}`,
+        },
+      }),
   });
 
   if (!response.ok) {
@@ -190,6 +201,11 @@ export async function imageResizeCommand(
     token: args.token,
     method: 'POST',
     path: '/api/v1/jobs',
+    stage: 'Create job request failed',
+    retry: {
+      attempts: NETWORK_RETRY_ATTEMPTS,
+      delaysMs: NETWORK_RETRY_DELAYS_MS,
+    },
     body: {
       tool_name: 'image.resize',
       ...(args.sync ? { execution_mode: 'sync' as const } : {}),
