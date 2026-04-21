@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
+import { assertJobSucceeded } from '../../lib/job-errors.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
 import { assertSupportedConvertInputPath } from './convert-input-policy.js';
@@ -205,6 +206,8 @@ export async function imageConvertCommand(
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
       });
+
+  assertJobSucceeded(job);
 
   if (args.output) {
     const outputFileId = getOutputFileId(job);

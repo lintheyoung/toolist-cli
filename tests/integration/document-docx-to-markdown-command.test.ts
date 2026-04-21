@@ -184,6 +184,92 @@ describe('document docx-to-markdown command', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('prints backend job failure details before checking the DOCX output bundle', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-docx-command-'));
+    const outputPath = join(tempDir, 'bundle.zip');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_docx_source_123',
+      upload_url: 'https://upload.example.com/file_docx_source_123',
+      headers: {
+        'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      filename: 'document.docx',
+      mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_docx_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_docx_failed_402',
+      status: 'failed',
+      toolName: 'document.docx_to_markdown_bundle',
+      toolVersion: '2026-04-19',
+      errorCode: 'PROVIDER_REQUEST_FAILED',
+      errorMessage: 'Replicate request failed with status 402',
+      progress: {
+        externalTaskId: 'replicate_prediction_docx_123',
+        providerStatus: 'failed',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_docx_failed_402',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        },
+      },
+      request_id: 'req_create_job_docx_failed_402',
+    }));
+
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'document',
+      'docx-to-markdown',
+      '--input',
+      '/tmp/document.docx',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Job failed: job_docx_failed_402');
+    expect(result.stderr).toContain('Status: failed');
+    expect(result.stderr).toContain('Error code: PROVIDER_REQUEST_FAILED');
+    expect(result.stderr).toContain('Error message: Replicate request failed with status 402');
+    expect(result.stderr).toContain('External task id: replicate_prediction_docx_123');
+    expect(result.stderr).toContain('Provider status: failed');
+    expect(result.stderr).not.toContain('did not produce an output file');
+    expect(fetch).not.toHaveBeenCalled();
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
   it('routes --env test to the hosted test base URL', async () => {
     const uploadCommand = vi.fn(async () => ({
       file_id: 'file_docx_source_test',

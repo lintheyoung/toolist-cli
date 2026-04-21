@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
+import { assertJobSucceeded } from '../../lib/job-errors.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
 
@@ -210,6 +211,8 @@ export async function imageCropCommand(
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
       });
+
+  assertJobSucceeded(job);
 
   if (args.output) {
     const outputFileId = getOutputFileId(job);
