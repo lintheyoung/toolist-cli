@@ -68,23 +68,45 @@ describe('document docx-to-markdown command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_docx_123',
-      status: 'succeeded',
-      toolName: 'document.docx_to_markdown_bundle',
-      toolVersion: '2026-04-19',
-      input: {
-        input_file_id: 'file_docx_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_docx_123',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('running', {
+          id: 'job_docx_123',
+          status: 'running',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_docx_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        return {
+          id: 'job_docx_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+          input: {
+            input_file_id: 'file_docx_source_123',
+          },
+          result: {
+            output: {
+              filename: 'bundle.zip',
+              outputFileId: 'file_docx_output_123',
+              mimeType: 'application/zip',
+              storageKey: 'ws/77/output/job_docx_123/bundle.zip',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          filename: 'bundle.zip',
-          outputFileId: 'file_docx_output_123',
-          mimeType: 'application/zip',
-          storageKey: 'ws/77/output/job_docx_123/bundle.zip',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -152,6 +174,7 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_docx_output_123/download',
@@ -179,7 +202,18 @@ describe('document docx-to-markdown command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_docx_source_123',
+      'Creating job...',
+      'Created job: job_docx_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: running',
+      'Status: succeeded',
+      'Downloading output: file_docx_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
 
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -258,6 +292,11 @@ describe('document docx-to-markdown command', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Uploading input...');
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr.indexOf('Status: failed')).toBeLessThan(
+      result.stderr.indexOf('Job failed: job_docx_failed_402'),
+    );
     expect(result.stderr).toContain('Job failed: job_docx_failed_402');
     expect(result.stderr).toContain('Status: failed');
     expect(result.stderr).toContain('Error code: PROVIDER_REQUEST_FAILED');
@@ -349,23 +388,45 @@ describe('document docx-to-markdown command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_docx_batch_123',
-      status: 'succeeded',
-      toolName: 'document.docx_to_markdown_bundle_batch',
-      toolVersion: '2026-04-19',
-      input: {
-        input_file_id: 'file_docx_batch_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_docx_batch_123',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('dispatching', {
+          id: 'job_docx_batch_123',
+          status: 'dispatching',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_docx_batch_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        return {
+          id: 'job_docx_batch_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+          input: {
+            input_file_id: 'file_docx_batch_source_123',
+          },
+          result: {
+            output: {
+              filename: 'results.zip',
+              outputFileId: 'file_docx_batch_output_123',
+              mimeType: 'application/zip',
+              storageKey: 'ws/77/output/job_docx_batch_123/results.zip',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          filename: 'results.zip',
-          outputFileId: 'file_docx_batch_output_123',
-          mimeType: 'application/zip',
-          storageKey: 'ws/77/output/job_docx_batch_123/results.zip',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -435,6 +496,7 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_docx_batch_output_123/download',
@@ -462,7 +524,18 @@ describe('document docx-to-markdown command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_docx_batch_source_123',
+      'Creating job...',
+      'Created job: job_docx_batch_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: dispatching',
+      'Status: succeeded',
+      'Downloading output: file_docx_batch_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
 
     await rm(tempDir, { recursive: true, force: true });
   });

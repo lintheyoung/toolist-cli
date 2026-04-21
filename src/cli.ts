@@ -25,6 +25,7 @@ import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
+import { createStderrProgressReporter } from './lib/progress-reporter.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -2936,6 +2937,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+        }, {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -2963,6 +2966,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+        }, {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -3057,6 +3062,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+        }, {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -3111,6 +3118,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
+        }, {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;

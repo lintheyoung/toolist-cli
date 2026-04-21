@@ -418,6 +418,62 @@ describe('jobs commands', () => {
     });
   });
 
+  it('notifies status changes once while waiting for a job', async () => {
+    const queuedJob = {
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const dispatchingJob = {
+      id: 'job_123',
+      status: 'dispatching',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const succeededJob = {
+      id: 'job_123',
+      status: 'succeeded',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const getJob = vi
+      .fn()
+      .mockResolvedValueOnce(queuedJob)
+      .mockResolvedValueOnce(queuedJob)
+      .mockResolvedValueOnce(dispatchingJob)
+      .mockResolvedValueOnce(dispatchingJob)
+      .mockResolvedValueOnce(succeededJob);
+    const sleep = vi.fn(async () => undefined);
+    const onStatus = vi.fn();
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        onStatus,
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result).toEqual(succeededJob);
+    expect(onStatus.mock.calls.map(([status]) => status)).toEqual([
+      'queued',
+      'dispatching',
+      'succeeded',
+    ]);
+    expect(onStatus).toHaveBeenNthCalledWith(1, 'queued', queuedJob);
+    expect(onStatus).toHaveBeenNthCalledWith(2, 'dispatching', dispatchingJob);
+    expect(onStatus).toHaveBeenNthCalledWith(3, 'succeeded', succeededJob);
+  });
+
   it('times out if a job only becomes terminal after the deadline', async () => {
     const getJob = vi
       .fn()
