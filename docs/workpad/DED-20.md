@@ -30,6 +30,12 @@ Classified as complex because this changes CLI behavior across multiple high-lev
 - `npm run build`
 - `npm run verify:pack-install`
 - `npm test -- tests/unit/job-errors.test.ts`
+- `git fetch origin --prune`
+- `git rebase origin/staging`
+- Post-sync `npm run lint`
+- Post-sync `npm test`
+- Post-sync `npm run build`
+- Post-sync `npm run verify:pack-install`
 
 ## Validation Results
 
@@ -41,6 +47,11 @@ Classified as complex because this changes CLI behavior across multiple high-lev
 - Fresh `npm test` passed: 30 files, 178 tests.
 - Fresh `npm run build` passed.
 - Fresh `npm run verify:pack-install` passed and verified `toolist-cli-0.1.0.tgz`.
+- Final sync: `git rebase origin/staging` reported the branch is up to date.
+- Post-sync `npm run lint` passed.
+- Post-sync `npm test` passed: 30 files, 178 tests.
+- Post-sync `npm run build` passed.
+- Post-sync `npm run verify:pack-install` passed and verified `toolist-cli-0.1.0.tgz`.
 
 ## Blockers
 
