@@ -56,7 +56,7 @@ export async function withRetry<T>(args: {
       lastError = error;
 
       if (args.shouldRetry && !args.shouldRetry(error)) {
-        throw error;
+        throw withStagePrefix(args.stage, error);
       }
 
       if (attemptIndex === attempts - 1) {
