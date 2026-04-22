@@ -1,5 +1,5 @@
-import { stat, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { mkdir, stat, readFile, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { glob } from 'glob';
 
@@ -10,6 +10,8 @@ export interface MarkdownUploadImagesCommandArgs {
   root?: string;
   glob?: string;
   inPlace: boolean;
+  outputDir?: string;
+  output?: string;
   public: true;
   dryRun?: boolean;
   skipMissing?: boolean;
@@ -41,6 +43,8 @@ export interface MarkdownUploadImagesMissingImage {
 
 export interface MarkdownUploadImagesFileReport {
   path: string;
+  output_path?: string;
+  would_write_path?: string;
   changed: boolean;
   image_links_found: number;
   cover_image_found: boolean;
@@ -63,6 +67,7 @@ export interface MarkdownUploadImagesDependencies {
   uploadCommand: typeof uploadCommand;
   readFile: typeof readFile;
   writeFile: typeof writeFile;
+  mkdir: typeof mkdir;
   stat: typeof stat;
   glob: typeof glob;
 }
@@ -102,6 +107,7 @@ function createDefaultDependencies(): MarkdownUploadImagesDependencies {
     uploadCommand,
     readFile,
     writeFile,
+    mkdir,
     stat,
     glob,
   };
@@ -418,6 +424,52 @@ function throwIfMissingImages(scannedFiles: ScannedMarkdownFile[], existence: Ma
   }
 }
 
+function validateWriteTarget(args: Pick<MarkdownUploadImagesCommandArgs, 'input' | 'root' | 'inPlace' | 'outputDir' | 'output'>): void {
+  if (args.inPlace && args.outputDir) {
+    throw new Error('Pass either --in-place or --output-dir, not both.');
+  }
+
+  if (args.inPlace && args.output) {
+    throw new Error('Pass either --in-place or --output, not both.');
+  }
+
+  if (args.output && args.outputDir) {
+    throw new Error('Pass either --output or --output-dir, not both.');
+  }
+
+  if (args.output && !args.input) {
+    throw new Error('--output is only supported with --input.');
+  }
+
+  if (args.outputDir && !args.root) {
+    throw new Error('--output-dir is only supported with --root.');
+  }
+
+  if (!args.inPlace && !args.output && !args.outputDir) {
+    throw new Error('Missing write target: pass --in-place, --output, or --output-dir');
+  }
+}
+
+function resolveMarkdownOutputPath(scannedFile: ScannedMarkdownFile, args: MarkdownUploadImagesCommandArgs): string {
+  if (args.inPlace) {
+    return scannedFile.path;
+  }
+
+  if (args.output) {
+    return resolve(args.output);
+  }
+
+  const rootPath = resolve(args.root!);
+  const outputDir = resolve(args.outputDir!);
+  return resolve(outputDir, relative(rootPath, scannedFile.path));
+}
+
+function assertOutputDoesNotOverwriteSource(outputPath: string, sourcePath: string): void {
+  if (resolve(outputPath) === resolve(sourcePath)) {
+    throw new Error(`Output path matches source Markdown. Use --in-place to overwrite source: ${sourcePath}`);
+  }
+}
+
 async function uploadImage(
   reference: LocalImageReference,
   args: Pick<MarkdownUploadImagesCommandArgs, 'baseUrl' | 'token' | 'configPath'>,
@@ -473,9 +525,7 @@ export async function markdownUploadImagesCommand(
     throw new Error('Missing required option: --input or --root');
   }
 
-  if (!args.inPlace) {
-    throw new Error('Missing required option: --in-place');
-  }
+  validateWriteTarget(args);
 
   if (!args.public) {
     throw new Error('Missing required option: --public');
@@ -487,6 +537,18 @@ export async function markdownUploadImagesCommand(
   };
   const markdownFiles = await listMarkdownFiles(args, deps);
   const scannedFiles = await Promise.all(markdownFiles.map((markdownPath) => scanMarkdownFile(markdownPath, deps)));
+  const outputPaths = new Map<ScannedMarkdownFile, string>();
+
+  for (const scannedFile of scannedFiles) {
+    const outputPath = resolveMarkdownOutputPath(scannedFile, args);
+
+    if (!args.inPlace) {
+      assertOutputDoesNotOverwriteSource(outputPath, scannedFile.path);
+    }
+
+    outputPaths.set(scannedFile, outputPath);
+  }
+
   const imageExistence = await collectLocalImageExistence(scannedFiles, deps);
 
   if (!args.dryRun && !args.skipMissing) {
@@ -497,9 +559,11 @@ export async function markdownUploadImagesCommand(
     const reports = scannedFiles.map((scannedFile) => {
       const localImages = createLocalImageExistence(scannedFile, imageExistence);
       const missing = createMissingImageReport(localImages);
+      const writePath = outputPaths.get(scannedFile)!;
 
       return {
         path: scannedFile.path,
+        ...(!args.inPlace ? { would_write_path: writePath } : {}),
         changed: false,
         image_links_found: scannedFile.imageLinksFound,
         cover_image_found: scannedFile.coverImageFound,
@@ -558,13 +622,16 @@ export async function markdownUploadImagesCommand(
 
     const updatedContent = applyReplacements(scannedFile.content, textReplacements);
     const changed = updatedContent !== scannedFile.content;
+    const outputPath = outputPaths.get(scannedFile)!;
 
-    if (changed) {
-      await deps.writeFile(scannedFile.path, updatedContent);
+    if (changed || !args.inPlace) {
+      await deps.mkdir(dirname(outputPath), { recursive: true });
+      await deps.writeFile(outputPath, updatedContent);
     }
 
     reports.push({
       path: scannedFile.path,
+      ...(!args.inPlace ? { output_path: outputPath } : {}),
       changed,
       image_links_found: scannedFile.imageLinksFound,
       cover_image_found: scannedFile.coverImageFound,
