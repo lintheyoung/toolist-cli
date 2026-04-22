@@ -1,4 +1,5 @@
 export interface ProgressReporter {
+  preparingChunk(index: number, total: number, inputCount: number): void;
   uploadingInput(): void;
   uploadedFile(fileId: string): void;
   creatingJob(): void;
@@ -6,6 +7,8 @@ export interface ProgressReporter {
   waitingForJob(): void;
   jobStatus(status: string): void;
   downloadingOutput(fileId: string): void;
+  savedChunkOutput(path: string): void;
+  mergingChunkOutputs(): void;
   savedOutput(path: string): void;
 }
 
@@ -17,6 +20,9 @@ export function createStderrProgressReporter(write: (chunk: string) => void): Pr
   let lastStatus: string | undefined;
 
   return {
+    preparingChunk(index, total, inputCount) {
+      writeLine(write, `Preparing chunk ${index}/${total} (${inputCount} files)...`);
+    },
     uploadingInput() {
       writeLine(write, 'Uploading input...');
     },
@@ -44,6 +50,12 @@ export function createStderrProgressReporter(write: (chunk: string) => void): Pr
     downloadingOutput(fileId) {
       writeLine(write, `Downloading output: ${fileId}`);
     },
+    savedChunkOutput(path) {
+      writeLine(write, `Saved chunk output: ${path}`);
+    },
+    mergingChunkOutputs() {
+      writeLine(write, 'Merging chunk outputs...');
+    },
     savedOutput(path) {
       writeLine(write, `Saved output: ${path}`);
     },
@@ -51,6 +63,7 @@ export function createStderrProgressReporter(write: (chunk: string) => void): Pr
 }
 
 export const silentProgressReporter: ProgressReporter = {
+  preparingChunk() {},
   uploadingInput() {},
   uploadedFile() {},
   creatingJob() {},
@@ -58,5 +71,7 @@ export const silentProgressReporter: ProgressReporter = {
   waitingForJob() {},
   jobStatus() {},
   downloadingOutput() {},
+  savedChunkOutput() {},
+  mergingChunkOutputs() {},
   savedOutput() {},
 };
