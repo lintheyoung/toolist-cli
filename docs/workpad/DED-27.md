@@ -33,6 +33,14 @@ Add non-in-place write targets for `toolist markdown upload-images`:
 - `npm run verify:pack-install`
 - `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
 - `node dist/cli.js markdown upload-images --input "$tmpdir/article.md" --output "$tmpdir/out/article.md" --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
+- Code Review round 1: `/Users/dede/Downloads/toollist/toolist-symphony/scripts/run_opencode_review.py round1 origin/staging src/commands/markdown/upload-images.ts src/cli.ts tests/integration/markdown-upload-images-command.test.ts docs/workpad/DED-27.md`
+- Rework targeted test red: `npm test -- tests/integration/markdown-upload-images-command.test.ts`
+- Rework targeted test green: `npm test -- tests/integration/markdown-upload-images-command.test.ts`
+- Rework lint: `npm run lint`
+- Rework full tests: `npm test`
+- Rework build: `npm run build`
+- Rework pack/install: `npm run verify:pack-install`
+- Rework hosted smoke: `node dist/cli.js markdown upload-images --input "$tmpdir/article.md" --output "$tmpdir/out/article.md" --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
 
 ## Validation Results
 
@@ -42,6 +50,12 @@ Add non-in-place write targets for `toolist markdown upload-images`:
 - Build: `tsc -p tsconfig.json` passed.
 - Pack/install smoke: `Verified packaged install smoke for toolist-cli-0.1.0.tgz`.
 - Hosted smoke: uploaded one test Markdown image through `--env test` using saved CLI config, wrote `output_path`, and left the source Markdown unchanged.
+- Code Review round 1 returned `changes_requested`; the valid risk was unguarded batch output path derivation if a scanned Markdown path were outside `--root`.
+- Rework added a regression test for output-dir escape prevention and an explicit root-relative guard. Targeted markdown suite now has 17 passing tests.
+- Rework full test suite: 32 files passed, 208 tests passed.
+- Rework build passed.
+- Rework pack/install smoke: `Verified packaged install smoke for toolist-cli-0.1.0.tgz`.
+- Rework hosted smoke: uploaded one test Markdown image through `--env test`, wrote `output_path`, and left the source Markdown unchanged.
 
 ## Blockers
 

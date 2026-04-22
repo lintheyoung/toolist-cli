@@ -1,5 +1,5 @@
 import { mkdir, stat, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { glob } from 'glob';
 
@@ -455,13 +455,19 @@ function resolveMarkdownOutputPath(scannedFile: ScannedMarkdownFile, args: Markd
     return scannedFile.path;
   }
 
-  if (args.output) {
+  if (args.output !== undefined) {
     return resolve(args.output);
   }
 
   const rootPath = resolve(args.root!);
   const outputDir = resolve(args.outputDir!);
-  return resolve(outputDir, relative(rootPath, scannedFile.path));
+  const relativeMarkdownPath = relative(rootPath, scannedFile.path);
+
+  if (relativeMarkdownPath === '..' || relativeMarkdownPath.startsWith(`..${sep}`) || isAbsolute(relativeMarkdownPath)) {
+    throw new Error(`Markdown file is outside --root: ${scannedFile.path}`);
+  }
+
+  return resolve(outputDir, relativeMarkdownPath);
 }
 
 function assertOutputDoesNotOverwriteSource(outputPath: string, sourcePath: string): void {

@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -393,6 +393,38 @@ describe('markdown upload-images command', () => {
           },
         ],
       });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects batch output paths that would escape --output-dir', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-markdown-upload-output-escape-'));
+    const rootDir = join(tempDir, 'project', 'root');
+    const outputDir = join(tempDir, 'published', 'nested');
+    const outsideMarkdownPath = join(tempDir, 'outside', 'article.md');
+
+    try {
+      await mkdir(rootDir, { recursive: true });
+      await mkdir(join(tempDir, 'outside'), { recursive: true });
+      await writeFile(outsideMarkdownPath, 'No local images.');
+
+      const { markdownUploadImagesCommand } = await import('../../src/commands/markdown/upload-images.js');
+
+      await expect(markdownUploadImagesCommand({
+        root: rootDir,
+        inPlace: false,
+        outputDir,
+        public: true,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      }, {
+        glob: vi.fn(async () => [outsideMarkdownPath]),
+        stat,
+        readFile,
+        writeFile: vi.fn(),
+        mkdir: vi.fn(),
+      })).rejects.toThrow('Markdown file is outside --root');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
