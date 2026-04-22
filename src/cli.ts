@@ -175,7 +175,7 @@ export function getMarkdownHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
+    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Commands:',
     '  upload-images  Upload local Markdown images and rewrite them to public URLs',
@@ -189,8 +189,8 @@ export function getMarkdownUploadImagesHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
-    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
+    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Options:',
     '  --input        Markdown file path for single-file mode',
@@ -204,6 +204,8 @@ export function getMarkdownUploadImagesHelp(): string {
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
     '  --report      Write the JSON report to a file',
+    '  --dry-run     Scan and report local images without uploading or writing Markdown',
+    '  --skip-missing Continue when local images are missing and report them',
   ].join('\n') + '\n';
 }
 
@@ -791,6 +793,8 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
   token?: string;
   configPath?: string;
   reportPath?: string;
+  dryRun?: boolean;
+  skipMissing?: boolean;
 } {
   const parsed: {
     input?: string;
@@ -803,6 +807,8 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
     token?: string;
     configPath?: string;
     reportPath?: string;
+    dryRun?: boolean;
+    skipMissing?: boolean;
   } = {};
 
   for (let index = 0; index < args.length; index += 1) {
@@ -911,6 +917,16 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
 
     if (flag === '--public') {
       parsed.public = true;
+      continue;
+    }
+
+    if (flag === '--dry-run') {
+      parsed.dryRun = true;
+      continue;
+    }
+
+    if (flag === '--skip-missing') {
+      parsed.skipMissing = true;
       continue;
     }
 
@@ -2912,6 +2928,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           glob: parsed.glob,
           inPlace: true,
           public: true,
+          dryRun: parsed.dryRun,
+          skipMissing: parsed.skipMissing,
           ...credentials,
           configPath: parsed.configPath,
         });
