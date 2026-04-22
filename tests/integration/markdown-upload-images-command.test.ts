@@ -44,18 +44,24 @@ function createUploadResult(fileId: string, publicUrl: string) {
 }
 
 describe('markdown upload-images command', () => {
-  it('shows --report in markdown help and markdown upload-images help', async () => {
+  it('shows report, dry-run, and skip-missing options in markdown help and markdown upload-images help', async () => {
     const markdownHelp = await runCli(['markdown', '--help']);
     const uploadImagesHelp = await runCli(['markdown', 'upload-images', '--help']);
 
     expect(markdownHelp.exitCode).toBe(0);
     expect(markdownHelp.stderr).toBe('');
     expect(markdownHelp.stdout).toContain('[--report <path>]');
+    expect(markdownHelp.stdout).toContain('[--dry-run]');
+    expect(markdownHelp.stdout).toContain('[--skip-missing]');
 
     expect(uploadImagesHelp.exitCode).toBe(0);
     expect(uploadImagesHelp.stderr).toBe('');
     expect(uploadImagesHelp.stdout).toContain('[--report <path>]');
+    expect(uploadImagesHelp.stdout).toContain('[--dry-run]');
+    expect(uploadImagesHelp.stdout).toContain('[--skip-missing]');
     expect(uploadImagesHelp.stdout).toContain('--report      Write the JSON report to a file');
+    expect(uploadImagesHelp.stdout).toContain('--dry-run     Scan and report local images without uploading or writing Markdown');
+    expect(uploadImagesHelp.stdout).toContain('--skip-missing Continue when local images are missing and report them');
   });
 
   it('uploads local markdown images and coverImage, skips remote URLs, reuses duplicates, and rewrites in place', async () => {
@@ -144,6 +150,7 @@ describe('markdown upload-images command', () => {
       expect(updatedMarkdown).toContain('![data](data:image/png;base64,abc123)');
 
       expect(JSON.parse(result.stdout)).toEqual({
+        dry_run: false,
         files: [
           {
             path: markdownPath,
@@ -177,11 +184,43 @@ describe('markdown upload-images command', () => {
                 file_id: 'file_demo',
               },
             ],
+            local_images: [
+              {
+                kind: 'coverImage',
+                from: './images/cover.png',
+                path: coverPath,
+                exists: true,
+                would_upload: true,
+              },
+              {
+                kind: 'markdown_image',
+                from: './images/demo.png',
+                path: demoPath,
+                exists: true,
+                would_upload: true,
+              },
+              {
+                kind: 'markdown_image',
+                from: 'assets/step-1.webp',
+                path: stepPath,
+                exists: true,
+                would_upload: true,
+              },
+              {
+                kind: 'markdown_image',
+                from: './images/demo.png',
+                path: demoPath,
+                exists: true,
+                would_upload: true,
+              },
+            ],
+            missing: [],
           },
         ],
         total_files: 1,
         total_changed: 1,
         total_uploaded: 3,
+        total_missing: 0,
       });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
@@ -232,6 +271,276 @@ describe('markdown upload-images command', () => {
         total_uploaded: 1,
       });
       await expect(readFile(reportPath, 'utf8')).resolves.toBe(result.stdout);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('dry-runs existing local images without uploading or changing Markdown', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-markdown-upload-dry-run-'));
+    const imageDir = join(tempDir, 'images');
+    const markdownPath = join(tempDir, 'article.md');
+    const coverPath = join(imageDir, 'cover.png');
+    const imagePath = join(imageDir, 'demo.png');
+    const reportPath = join(tempDir, 'reports', 'dry-run.json');
+    const originalMarkdown = [
+      '---',
+      'title: Demo',
+      'coverImage: "./images/cover.png"',
+      '---',
+      '',
+      '![demo](./images/demo.png)',
+      '![remote](https://img.tooli.st/public/files/file_existing/a.png)',
+      '![data](data:image/png;base64,abc123)',
+    ].join('\n');
+
+    try {
+      await mkdir(imageDir, { recursive: true });
+      await writeFile(coverPath, 'cover image');
+      await writeFile(imagePath, 'demo image');
+      await writeFile(markdownPath, originalMarkdown);
+
+      const uploadCommand = vi.fn();
+
+      vi.doMock('../../src/commands/files/upload.js', () => ({
+        uploadCommand,
+      }));
+
+      const result = await runCli([
+        'markdown',
+        'upload-images',
+        '--input',
+        markdownPath,
+        '--in-place',
+        '--public',
+        '--base-url',
+        'https://api.example.com',
+        '--token',
+        'tgc_cli_secret',
+        '--dry-run',
+        '--report',
+        reportPath,
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(uploadCommand).not.toHaveBeenCalled();
+      await expect(readFile(markdownPath, 'utf8')).resolves.toBe(originalMarkdown);
+      await expect(readFile(reportPath, 'utf8')).resolves.toBe(result.stdout);
+
+      expect(JSON.parse(result.stdout)).toEqual({
+        dry_run: true,
+        files: [
+          {
+            path: markdownPath,
+            changed: false,
+            image_links_found: 1,
+            cover_image_found: true,
+            uploaded: 0,
+            replacements: [],
+            local_images: [
+              {
+                kind: 'coverImage',
+                from: './images/cover.png',
+                path: coverPath,
+                exists: true,
+                would_upload: true,
+              },
+              {
+                kind: 'markdown_image',
+                from: './images/demo.png',
+                path: imagePath,
+                exists: true,
+                would_upload: true,
+              },
+            ],
+            missing: [],
+          },
+        ],
+        total_files: 1,
+        total_changed: 0,
+        total_uploaded: 0,
+        total_missing: 0,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('dry-runs missing local images without uploading or changing Markdown', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-markdown-upload-dry-run-missing-'));
+    const markdownPath = join(tempDir, 'article.md');
+    const missingPath = join(tempDir, 'images', 'missing.png');
+    const originalMarkdown = '![missing](images/missing.png)';
+
+    try {
+      await writeFile(markdownPath, originalMarkdown);
+
+      const uploadCommand = vi.fn();
+
+      vi.doMock('../../src/commands/files/upload.js', () => ({
+        uploadCommand,
+      }));
+
+      const result = await runCli([
+        'markdown',
+        'upload-images',
+        '--input',
+        markdownPath,
+        '--in-place',
+        '--public',
+        '--base-url',
+        'https://api.example.com',
+        '--token',
+        'tgc_cli_secret',
+        '--dry-run',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      expect(uploadCommand).not.toHaveBeenCalled();
+      await expect(readFile(markdownPath, 'utf8')).resolves.toBe(originalMarkdown);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        dry_run: true,
+        total_missing: 1,
+        files: [
+          {
+            path: markdownPath,
+            changed: false,
+            uploaded: 0,
+            replacements: [],
+            local_images: [
+              {
+                kind: 'markdown_image',
+                from: 'images/missing.png',
+                path: missingPath,
+                exists: false,
+                would_upload: false,
+              },
+            ],
+            missing: [
+              {
+                kind: 'markdown_image',
+                from: 'images/missing.png',
+                path: missingPath,
+              },
+            ],
+          },
+        ],
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips missing local images while uploading and rewriting existing images', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-markdown-upload-skip-missing-'));
+    const imageDir = join(tempDir, 'images');
+    const markdownPath = join(tempDir, 'article.md');
+    const existingPath = join(imageDir, 'demo.png');
+    const missingPath = join(imageDir, 'missing.png');
+    const reportPath = join(tempDir, 'reports', 'skip-missing.json');
+
+    try {
+      await mkdir(imageDir, { recursive: true });
+      await writeFile(existingPath, 'demo image');
+      await writeFile(markdownPath, [
+        '![demo](./images/demo.png)',
+        '![missing](./images/missing.png)',
+        '![remote](https://img.tooli.st/public/files/file_existing/a.png)',
+        '![data](data:image/png;base64,abc123)',
+      ].join('\n'));
+
+      const uploadCommand = vi.fn(async () => createUploadResult(
+        'file_demo',
+        'https://img.tooli.st/public/files/file_demo/demo.png',
+      ));
+
+      vi.doMock('../../src/commands/files/upload.js', () => ({
+        uploadCommand,
+      }));
+
+      const result = await runCli([
+        'markdown',
+        'upload-images',
+        '--input',
+        markdownPath,
+        '--in-place',
+        '--public',
+        '--base-url',
+        'https://api.example.com',
+        '--token',
+        'tgc_cli_secret',
+        '--skip-missing',
+        '--report',
+        reportPath,
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe('');
+      await expect(readFile(reportPath, 'utf8')).resolves.toBe(result.stdout);
+      expect(uploadCommand).toHaveBeenCalledTimes(1);
+      expect(uploadCommand).toHaveBeenCalledWith({
+        input: existingPath,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        configPath: undefined,
+        public: true,
+      });
+
+      const updatedMarkdown = await readFile(markdownPath, 'utf8');
+      expect(updatedMarkdown).toContain('![demo](https://img.tooli.st/public/files/file_demo/demo.png)');
+      expect(updatedMarkdown).toContain('![missing](./images/missing.png)');
+      expect(updatedMarkdown).toContain('![remote](https://img.tooli.st/public/files/file_existing/a.png)');
+      expect(updatedMarkdown).toContain('![data](data:image/png;base64,abc123)');
+
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        dry_run: false,
+        total_files: 1,
+        total_changed: 1,
+        total_uploaded: 1,
+        total_missing: 1,
+        files: [
+          {
+            path: markdownPath,
+            changed: true,
+            image_links_found: 2,
+            cover_image_found: false,
+            uploaded: 1,
+            replacements: [
+              {
+                kind: 'markdown_image',
+                from: './images/demo.png',
+                to: 'https://img.tooli.st/public/files/file_demo/demo.png',
+                file_id: 'file_demo',
+              },
+            ],
+            local_images: [
+              {
+                kind: 'markdown_image',
+                from: './images/demo.png',
+                path: existingPath,
+                exists: true,
+                would_upload: true,
+              },
+              {
+                kind: 'markdown_image',
+                from: './images/missing.png',
+                path: missingPath,
+                exists: false,
+                would_upload: false,
+              },
+            ],
+            missing: [
+              {
+                kind: 'markdown_image',
+                from: './images/missing.png',
+                path: missingPath,
+              },
+            ],
+          },
+        ],
+      });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

@@ -11,6 +11,8 @@ export interface MarkdownUploadImagesCommandArgs {
   glob?: string;
   inPlace: boolean;
   public: true;
+  dryRun?: boolean;
+  skipMissing?: boolean;
   baseUrl: string;
   token: string;
   configPath?: string;
@@ -23,6 +25,20 @@ export interface MarkdownUploadImagesReplacement {
   file_id: string;
 }
 
+export interface MarkdownUploadImagesLocalImage {
+  kind: 'coverImage' | 'markdown_image';
+  from: string;
+  path: string;
+  exists: boolean;
+  would_upload: boolean;
+}
+
+export interface MarkdownUploadImagesMissingImage {
+  kind: 'coverImage' | 'markdown_image';
+  from: string;
+  path: string;
+}
+
 export interface MarkdownUploadImagesFileReport {
   path: string;
   changed: boolean;
@@ -30,13 +46,17 @@ export interface MarkdownUploadImagesFileReport {
   cover_image_found: boolean;
   uploaded: number;
   replacements: MarkdownUploadImagesReplacement[];
+  local_images: MarkdownUploadImagesLocalImage[];
+  missing: MarkdownUploadImagesMissingImage[];
 }
 
 export interface MarkdownUploadImagesReport {
+  dry_run: boolean;
   files: MarkdownUploadImagesFileReport[];
   total_files: number;
   total_changed: number;
   total_uploaded: number;
+  total_missing: number;
 }
 
 export interface MarkdownUploadImagesDependencies {
@@ -67,6 +87,11 @@ type ScannedMarkdownFile = {
 type UploadedImage = {
   fileId: string;
   publicUrl: string;
+};
+
+type LocalImageExistence = {
+  reference: LocalImageReference;
+  exists: boolean;
 };
 
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]\n]*\]\(([^)\n]+)\)/g;
@@ -316,19 +341,21 @@ async function scanMarkdownFile(
   };
 }
 
-async function validateLocalImages(
+async function collectLocalImageExistence(
   scannedFiles: ScannedMarkdownFile[],
   deps: Pick<MarkdownUploadImagesDependencies, 'stat'>,
-): Promise<void> {
-  const checkedPaths = new Set<string>();
+): Promise<Map<LocalImageReference, boolean>> {
+  const checkedPaths = new Map<string, boolean>();
+  const results = new Map<LocalImageReference, boolean>();
 
   for (const scannedFile of scannedFiles) {
     for (const reference of scannedFile.references) {
-      if (checkedPaths.has(reference.absolutePath)) {
+      const cached = checkedPaths.get(reference.absolutePath);
+
+      if (cached !== undefined) {
+        results.set(reference, cached);
         continue;
       }
-
-      checkedPaths.add(reference.absolutePath);
 
       try {
         const fileStats = await deps.stat(reference.absolutePath);
@@ -336,12 +363,56 @@ async function validateLocalImages(
         if (!fileStats.isFile()) {
           throw new Error(`Local image is not a file: ${reference.from} (referenced by ${scannedFile.path})`);
         }
+
+        checkedPaths.set(reference.absolutePath, true);
+        results.set(reference, true);
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-          throw new Error(`Local image not found: ${reference.from} (referenced by ${scannedFile.path})`);
+          checkedPaths.set(reference.absolutePath, false);
+          results.set(reference, false);
+          continue;
         }
 
         throw error;
+      }
+    }
+  }
+
+  return results;
+}
+
+function createLocalImageExistence(scannedFile: ScannedMarkdownFile, existence: Map<LocalImageReference, boolean>): LocalImageExistence[] {
+  return scannedFile.references.map((reference) => ({
+    reference,
+    exists: existence.get(reference) ?? false,
+  }));
+}
+
+function createLocalImageReport(localImages: LocalImageExistence[]): MarkdownUploadImagesLocalImage[] {
+  return localImages.map(({ reference, exists }) => ({
+    kind: reference.kind,
+    from: reference.from,
+    path: reference.absolutePath,
+    exists,
+    would_upload: exists,
+  }));
+}
+
+function createMissingImageReport(localImages: LocalImageExistence[]): MarkdownUploadImagesMissingImage[] {
+  return localImages
+    .filter(({ exists }) => !exists)
+    .map(({ reference }) => ({
+      kind: reference.kind,
+      from: reference.from,
+      path: reference.absolutePath,
+    }));
+}
+
+function throwIfMissingImages(scannedFiles: ScannedMarkdownFile[], existence: Map<LocalImageReference, boolean>): void {
+  for (const scannedFile of scannedFiles) {
+    for (const reference of scannedFile.references) {
+      if (!existence.get(reference)) {
+        throw new Error(`Local image not found: ${reference.from} (referenced by ${scannedFile.path})`);
       }
     }
   }
@@ -416,19 +487,55 @@ export async function markdownUploadImagesCommand(
   };
   const markdownFiles = await listMarkdownFiles(args, deps);
   const scannedFiles = await Promise.all(markdownFiles.map((markdownPath) => scanMarkdownFile(markdownPath, deps)));
+  const imageExistence = await collectLocalImageExistence(scannedFiles, deps);
 
-  await validateLocalImages(scannedFiles, deps);
+  if (!args.dryRun && !args.skipMissing) {
+    throwIfMissingImages(scannedFiles, imageExistence);
+  }
+
+  if (args.dryRun) {
+    const reports = scannedFiles.map((scannedFile) => {
+      const localImages = createLocalImageExistence(scannedFile, imageExistence);
+      const missing = createMissingImageReport(localImages);
+
+      return {
+        path: scannedFile.path,
+        changed: false,
+        image_links_found: scannedFile.imageLinksFound,
+        cover_image_found: scannedFile.coverImageFound,
+        uploaded: 0,
+        replacements: [],
+        local_images: createLocalImageReport(localImages),
+        missing,
+      };
+    });
+
+    return {
+      dry_run: true,
+      files: reports,
+      total_files: reports.length,
+      total_changed: 0,
+      total_uploaded: 0,
+      total_missing: reports.reduce((total, file) => total + file.missing.length, 0),
+    };
+  }
 
   const uploadCache = new Map<string, UploadedImage>();
   const reports: MarkdownUploadImagesFileReport[] = [];
   let totalUploaded = 0;
 
   for (const scannedFile of scannedFiles) {
+    const localImages = createLocalImageExistence(scannedFile, imageExistence);
+    const missing = createMissingImageReport(localImages);
     const textReplacements: Array<{ start: number; end: number; to: string }> = [];
     const reportReplacements: MarkdownUploadImagesReplacement[] = [];
     let uploaded = 0;
 
-    for (const reference of scannedFile.references) {
+    for (const { reference, exists } of localImages) {
+      if (!exists) {
+        continue;
+      }
+
       const { image, uploaded: didUpload } = await uploadImage(reference, args, deps, uploadCache);
 
       if (didUpload) {
@@ -463,13 +570,17 @@ export async function markdownUploadImagesCommand(
       cover_image_found: scannedFile.coverImageFound,
       uploaded,
       replacements: reportReplacements,
+      local_images: createLocalImageReport(localImages),
+      missing,
     });
   }
 
   return {
+    dry_run: false,
     files: reports,
     total_files: reports.length,
     total_changed: reports.filter((file) => file.changed).length,
     total_uploaded: totalUploaded,
+    total_missing: reports.reduce((total, file) => total + file.missing.length, 0),
   };
 }
