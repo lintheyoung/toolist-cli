@@ -120,6 +120,66 @@ describe('apiRequest', () => {
     });
   });
 
+  it('adds request stage context to fetch transport failures', async () => {
+    const fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+
+    vi.stubGlobal('fetch', fetch);
+
+    const { apiRequest } = await import('../../src/lib/http.js');
+
+    await expect(
+      apiRequest({
+        baseUrl: 'https://api.example.com',
+        method: 'POST',
+        path: '/api/v1/jobs',
+        stage: 'Create job request failed',
+      }),
+    ).rejects.toThrow('Create job request failed: fetch failed');
+  });
+
+  it('retries staged fetch transport failures before returning parsed JSON', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              job: {
+                id: 'job_123',
+                status: 'queued',
+              },
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+
+    vi.stubGlobal('fetch', fetch);
+
+    const { apiRequest } = await import('../../src/lib/http.js');
+    const result = await apiRequest<{ data: { job: { id: string } } }>({
+      baseUrl: 'https://api.example.com',
+      method: 'POST',
+      path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [0, 0],
+      },
+    });
+
+    expect(result.data.job.id).toBe('job_123');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('normalizes invalid JSON response bodies into structured CLI errors', async () => {
     const fetch = vi.fn(async () =>
       new Response('{"data":', {

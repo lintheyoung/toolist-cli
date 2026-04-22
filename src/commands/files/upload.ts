@@ -3,6 +3,7 @@ import { basename, extname } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
+import { withStageContext } from '../../lib/retry.js';
 
 export interface UploadFileCommandArgs {
   input: string;
@@ -99,6 +100,7 @@ export async function uploadCommand(
     token: args.token,
     method: 'POST',
     path: '/api/v1/files/create-upload',
+    stage: 'Create upload request failed',
     body: {
       filename,
       mime_type: mimeType,
@@ -112,11 +114,13 @@ export async function uploadCommand(
     'content-type': mimeType,
   };
 
-  const uploadResponse = await deps.fetch(createUploadResponse.data.upload_url, {
-    method: 'PUT',
-    headers: uploadHeaders,
-    body: fileBuffer,
-  });
+  const uploadResponse = await withStageContext('Upload request failed', () =>
+    deps.fetch(createUploadResponse.data.upload_url, {
+      method: 'PUT',
+      headers: uploadHeaders,
+      body: fileBuffer,
+    }),
+  );
 
   if (!uploadResponse.ok) {
     throw new Error(`Failed to upload ${filename} to the presigned URL.`);
@@ -127,6 +131,7 @@ export async function uploadCommand(
     token: args.token,
     method: 'POST',
     path: `/api/v1/files/${encodeURIComponent(createUploadResponse.data.file_id)}/complete`,
+    stage: 'Complete upload request failed',
     ...(sha256 ? { body: { sha256 } } : {}),
   });
 

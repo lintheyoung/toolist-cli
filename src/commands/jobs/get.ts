@@ -5,6 +5,7 @@ export interface GetJobCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  stage?: string;
 }
 
 export interface JobDetails {
@@ -48,6 +49,7 @@ export async function getJobCommand(
     token: args.token,
     method: 'GET',
     path: `/api/v1/jobs/${encodeURIComponent(args.jobId)}`,
+    ...(args.stage ? { stage: args.stage } : {}),
   });
 
   return response.data.job;

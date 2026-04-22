@@ -164,6 +164,16 @@ describe('image remove-watermark-batch command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         idempotency_key: expect.any(String),
@@ -301,6 +311,16 @@ describe('image remove-watermark-batch command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         input: {
@@ -445,6 +465,8 @@ describe('image remove-watermark-batch command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/create-upload',
+      stage: 'Create upload request failed',
+      stage: 'Create upload request failed',
       body: {
         filename: 'inputs.zip',
         mime_type: 'application/zip',

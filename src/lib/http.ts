@@ -1,4 +1,5 @@
 import { CliError } from './errors.js';
+import { withRetry, withStageContext, type RetryOptions } from './retry.js';
 
 type ApiErrorEnvelope = {
   error?: {
@@ -85,6 +86,8 @@ export async function apiRequest<T>(args: {
   method?: string;
   path: string;
   body?: unknown;
+  stage?: string;
+  retry?: RetryOptions;
 }): Promise<T> {
   const headers: Record<string, string> = {
     accept: 'application/json',
@@ -103,13 +106,31 @@ export async function apiRequest<T>(args: {
 
   let response: Response;
 
-  try {
-    response = await fetch(buildUrl(args.baseUrl, args.path), {
+  const fetchRequest = async () =>
+    fetch(buildUrl(args.baseUrl, args.path), {
       method,
       headers,
       body,
     });
-  } catch {
+
+  try {
+    if (args.stage && args.retry) {
+      response = await withRetry({
+        stage: args.stage,
+        attempts: args.retry.attempts,
+        delaysMs: args.retry.delaysMs,
+        fn: fetchRequest,
+      });
+    } else if (args.stage) {
+      response = await withStageContext(args.stage, fetchRequest);
+    } else {
+      response = await fetchRequest();
+    }
+  } catch (error) {
+    if (args.stage) {
+      throw error;
+    }
+
     throw unexpectedError();
   }
 

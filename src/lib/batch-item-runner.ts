@@ -7,6 +7,11 @@ import { waitJobCommand } from '../commands/jobs/wait.js';
 import { apiRequest } from './http.js';
 import { isCliError } from './errors.js';
 import { assertJobSucceeded } from './job-errors.js';
+import {
+  NETWORK_RETRY_ATTEMPTS,
+  NETWORK_RETRY_DELAYS_MS,
+  withRetry,
+} from './retry.js';
 import type { BatchManifest } from './batch-manifest.js';
 import { saveBatchState, type BatchItemState, type BatchState } from './batch-state.js';
 
@@ -133,10 +138,16 @@ async function downloadOutputFile(
 ): Promise<void> {
   await dependencies.mkdir(dirname(args.outputPath), { recursive: true });
 
-  const response = await dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-    headers: {
-      authorization: `Bearer ${args.token}`,
-    },
+  const response = await withRetry({
+    stage: 'Output download failed',
+    attempts: NETWORK_RETRY_ATTEMPTS,
+    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    fn: () =>
+      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
+        headers: {
+          authorization: `Bearer ${args.token}`,
+        },
+      }),
   });
 
   if (!response.ok) {
@@ -241,6 +252,11 @@ export async function runBatchItem(
         token: args.credentials.token,
         method: 'POST',
         path: '/api/v1/jobs',
+        stage: 'Create job request failed',
+        retry: {
+          attempts: NETWORK_RETRY_ATTEMPTS,
+          delaysMs: NETWORK_RETRY_DELAYS_MS,
+        },
         body: {
           tool_name: args.item.tool_name,
           idempotency_key: deps.randomUUID(),

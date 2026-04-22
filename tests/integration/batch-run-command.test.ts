@@ -540,6 +540,16 @@ describe('batch item runner', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: {
         tool_name: 'image.resize',
         idempotency_key: 'uuid_123',
@@ -741,6 +751,16 @@ describe('batch item runner', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: {
         tool_name: 'image.crop',
         idempotency_key: 'uuid_456',
@@ -932,6 +952,16 @@ describe('batch item runner', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: {
         tool_name: 'image.resize',
         idempotency_key: 'uuid_fresh',
