@@ -2918,6 +2918,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         const jsonOutput = `${JSON.stringify(result)}\n`;
 
         if (parsed.reportPath) {
+          // Keep failed report writes from looking successful to stdout consumers.
           await writeReportFile(parsed.reportPath, jsonOutput);
         }
 
