@@ -3,7 +3,11 @@ import { basename, extname } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
-import { withStageContext } from '../../lib/retry.js';
+import {
+  NETWORK_RETRY_ATTEMPTS,
+  NETWORK_RETRY_DELAYS_MS,
+  withStageContext,
+} from '../../lib/retry.js';
 
 export interface UploadFileCommandArgs {
   input: string;
@@ -101,6 +105,10 @@ export async function uploadCommand(
     method: 'POST',
     path: '/api/v1/files/create-upload',
     stage: 'Create upload request failed',
+    retry: {
+      attempts: NETWORK_RETRY_ATTEMPTS,
+      delaysMs: NETWORK_RETRY_DELAYS_MS,
+    },
     body: {
       filename,
       mime_type: mimeType,
@@ -132,6 +140,10 @@ export async function uploadCommand(
     method: 'POST',
     path: `/api/v1/files/${encodeURIComponent(createUploadResponse.data.file_id)}/complete`,
     stage: 'Complete upload request failed',
+    retry: {
+      attempts: NETWORK_RETRY_ATTEMPTS,
+      delaysMs: NETWORK_RETRY_DELAYS_MS,
+    },
     ...(sha256 ? { body: { sha256 } } : {}),
   });
 
