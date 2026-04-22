@@ -587,15 +587,69 @@ describe('files upload command', () => {
     });
   });
 
-  it('adds upload stage context to presigned PUT transport failures', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
-    const inputPath = join(tempDir, 'photo.jpg');
+  it('retries presigned PUT transport failures and returns the file upload result', async () => {
     const fileContents = Buffer.from('hello world');
-    await writeFile(inputPath, fileContents);
+    const setTimeoutSpy = mockRetrySleepsImmediate();
 
-    const fetch = vi.fn(async () => {
-      throw new TypeError('fetch failed');
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          file_id: 'file_123',
+          upload_url: 'https://upload.example.com/file_123',
+          headers: {
+            'content-type': 'image/jpeg',
+          },
+        },
+        request_id: 'req_create_upload_123',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          file: {
+            fileId: 'file_123',
+            status: 'uploaded',
+          },
+        },
+        request_id: 'req_complete_upload_123',
+      });
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    const result = await uploadCommand(
+      {
+        input: '/tmp/photo.jpg',
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        apiRequest,
+        ...mockFileReadDependencies(fileContents),
+      },
+    );
+
+    expect(result.file).toEqual({
+      fileId: 'file_123',
+      status: 'uploaded',
     });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+  });
+
+  it('keeps upload stage context when presigned PUT transport failures exceed retry budget', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'));
     vi.stubGlobal('fetch', fetch);
 
     const apiRequest = vi.fn(async () => ({
@@ -614,15 +668,159 @@ describe('files upload command', () => {
     await expect(
       uploadCommand(
         {
-          input: inputPath,
+          input: '/tmp/photo.jpg',
           baseUrl: 'https://api.example.com',
           token: 'tgc_cli_secret',
         },
         {
           apiRequest,
+          ...mockFileReadDependencies(fileContents),
         },
       ),
     ).rejects.toThrow('Upload request failed: fetch failed');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+  });
+
+  it('retries presigned PUT 5xx responses and returns the file upload result', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          file_id: 'file_123',
+          upload_url: 'https://upload.example.com/file_123',
+          headers: {
+            'content-type': 'image/jpeg',
+          },
+        },
+        request_id: 'req_create_upload_123',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          file: {
+            fileId: 'file_123',
+            status: 'uploaded',
+          },
+        },
+        request_id: 'req_complete_upload_123',
+      });
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    const result = await uploadCommand(
+      {
+        input: '/tmp/photo.jpg',
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        apiRequest,
+        ...mockFileReadDependencies(fileContents),
+      },
+    );
+
+    expect(result.file).toEqual({
+      fileId: 'file_123',
+      status: 'uploaded',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+  });
+
+  it('keeps upload stage context and response detail when presigned PUT 5xx responses exceed retry budget', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        file_id: 'file_123',
+        upload_url: 'https://upload.example.com/file_123',
+        headers: {
+          'content-type': 'image/jpeg',
+        },
+      },
+      request_id: 'req_create_upload_123',
+    }));
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    await expect(
+      uploadCommand(
+        {
+          input: '/tmp/photo.jpg',
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          apiRequest,
+          ...mockFileReadDependencies(fileContents),
+        },
+      ),
+    ).rejects.toThrow(
+      'Upload request failed: upload responded with HTTP 503 Service Unavailable',
+    );
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+  });
+
+  it('does not retry presigned PUT 4xx responses', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+
+    const fetch = vi.fn(async () => new Response(null, { status: 403 }));
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        file_id: 'file_123',
+        upload_url: 'https://upload.example.com/file_123',
+        headers: {
+          'content-type': 'image/jpeg',
+        },
+      },
+      request_id: 'req_create_upload_123',
+    }));
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    await expect(
+      uploadCommand(
+        {
+          input: '/tmp/photo.jpg',
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          apiRequest,
+          ...mockFileReadDependencies(fileContents),
+        },
+      ),
+    ).rejects.toThrow('Failed to upload photo.jpg to the presigned URL.');
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 });

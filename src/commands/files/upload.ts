@@ -6,7 +6,7 @@ import { apiRequest } from '../../lib/http.js';
 import {
   NETWORK_RETRY_ATTEMPTS,
   NETWORK_RETRY_DELAYS_MS,
-  withStageContext,
+  withRetry,
 } from '../../lib/retry.js';
 
 export interface UploadFileCommandArgs {
@@ -68,6 +68,15 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+function isRetryableUploadResponse(response: Response): boolean {
+  return response.status >= 500 && response.status <= 599;
+}
+
+function formatUploadResponseStatus(response: Response): string {
+  const statusText = response.statusText.trim();
+  return statusText ? `HTTP ${response.status} ${statusText}` : `HTTP ${response.status}`;
+}
+
 function createDefaultDependencies(): UploadFileDependencies {
   return {
     apiRequest,
@@ -122,13 +131,24 @@ export async function uploadCommand(
     'content-type': mimeType,
   };
 
-  const uploadResponse = await withStageContext('Upload request failed', () =>
-    deps.fetch(createUploadResponse.data.upload_url, {
-      method: 'PUT',
-      headers: uploadHeaders,
-      body: fileBuffer,
-    }),
-  );
+  const uploadResponse = await withRetry({
+    stage: 'Upload request failed',
+    attempts: NETWORK_RETRY_ATTEMPTS,
+    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    fn: async () => {
+      const response = await deps.fetch(createUploadResponse.data.upload_url, {
+        method: 'PUT',
+        headers: uploadHeaders,
+        body: fileBuffer,
+      });
+
+      if (isRetryableUploadResponse(response)) {
+        throw new Error(`upload responded with ${formatUploadResponseStatus(response)}`);
+      }
+
+      return response;
+    },
+  });
 
   if (!uploadResponse.ok) {
     throw new Error(`Failed to upload ${filename} to the presigned URL.`);
