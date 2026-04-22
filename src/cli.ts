@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import { documentDocxToMarkdownBatchCommand } from './commands/document/docx-to-markdown-batch.js';
 import { documentDocxToMarkdownCommand } from './commands/document/docx-to-markdown.js';
@@ -58,6 +59,13 @@ function unexpectedPositional(arg: string): never {
 
 function missingOptionValue(flag: string): never {
   throw new Error(`Missing value for option: ${flag}`);
+}
+
+async function writeReportFile(path: string, contents: string): Promise<void> {
+  const resolvedPath = resolve(path);
+
+  await mkdir(dirname(resolvedPath), { recursive: true });
+  await writeFile(resolvedPath, contents, 'utf8');
 }
 
 function parseOption(arg: string, args: string[], index: number): {
@@ -167,7 +175,7 @@ export function getMarkdownHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
     '',
     'Commands:',
     '  upload-images  Upload local Markdown images and rewrite them to public URLs',
@@ -181,8 +189,8 @@ export function getMarkdownUploadImagesHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
+    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>]',
     '',
     'Options:',
     '  --input        Markdown file path for single-file mode',
@@ -195,6 +203,7 @@ export function getMarkdownUploadImagesHelp(): string {
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
+    '  --report      Write the JSON report to a file',
   ].join('\n') + '\n';
 }
 
@@ -781,6 +790,7 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
   env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
+  reportPath?: string;
 } {
   const parsed: {
     input?: string;
@@ -792,6 +802,7 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
     env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
+    reportPath?: string;
   } = {};
 
   for (let index = 0; index < args.length; index += 1) {
@@ -843,6 +854,17 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--report') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.reportPath = value;
       if (consumeNext) {
         index += 1;
       }
@@ -2893,7 +2915,14 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           ...credentials,
           configPath: parsed.configPath,
         });
-        io.stdout(`${JSON.stringify(result)}\n`);
+        const jsonOutput = `${JSON.stringify(result)}\n`;
+
+        if (parsed.reportPath) {
+          // Keep failed report writes from looking successful to stdout consumers.
+          await writeReportFile(parsed.reportPath, jsonOutput);
+        }
+
+        io.stdout(jsonOutput);
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Markdown upload-images failed.'}\n`);
