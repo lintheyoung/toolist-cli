@@ -737,6 +737,56 @@ describe('files upload command', () => {
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
   });
 
+  it('keeps upload stage context and response detail when presigned PUT 5xx responses exceed retry budget', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        file_id: 'file_123',
+        upload_url: 'https://upload.example.com/file_123',
+        headers: {
+          'content-type': 'image/jpeg',
+        },
+      },
+      request_id: 'req_create_upload_123',
+    }));
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    await expect(
+      uploadCommand(
+        {
+          input: '/tmp/photo.jpg',
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          apiRequest,
+          ...mockFileReadDependencies(fileContents),
+        },
+      ),
+    ).rejects.toThrow(
+      'Upload request failed: upload responded with HTTP 503 Service Unavailable',
+    );
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+  });
+
   it('does not retry presigned PUT 4xx responses', async () => {
     const fileContents = Buffer.from('hello world');
     const setTimeoutSpy = mockRetrySleepsImmediate();

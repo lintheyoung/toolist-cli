@@ -12,6 +12,8 @@ Add retry behavior to the `files upload` presigned PUT phase. The intended behav
 - Preserve final stage context for exhausted transport failures: `Upload request failed: fetch failed`.
 - Keep the current clear upload failure for non-retryable non-OK responses.
 - Do not add stderr retry notices in this change because `uploadCommand()` has no stderr writer dependency; keep retry behavior and context scoped to the upload layer.
+- Rework note: opencode review round 1 claimed 4xx lost upload stage context, but `origin/staging` already threw non-OK upload errors outside `withStageContext()`. The existing clear 4xx behavior is intentionally retained and covered by the no-retry test.
+- Rework note: added explicit retry-exhaustion coverage for repeated 5xx responses and included `statusText` in the final staged retry error when available.
 
 ## Commands run
 
@@ -40,6 +42,21 @@ Add retry behavior to the `files upload` presigned PUT phase. The intended behav
 - `python3 /Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
 - `node dist/cli.js files upload --input /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.Anu6l37cMg/smoke.png --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
 - `node dist/cli.js markdown upload-images --input /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.Anu6l37cMg/input.md --output /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.Anu6l37cMg/output.md --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
+- `python3 /Users/dede/Downloads/toollist/toolist-symphony/scripts/run_opencode_review.py round1 origin/staging src/commands/files/upload.ts tests/integration/files-upload-command.test.ts`
+- `git show origin/staging:src/commands/files/upload.ts | sed -n '116,140p'`
+- `npm test -- tests/integration/files-upload-command.test.ts` (rework red)
+- `npm test -- tests/integration/files-upload-command.test.ts` (rework green)
+- `npm run lint` (rework)
+- `npm test` (rework)
+- `npm run build` (rework)
+- `python3 /Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py` (rework)
+- `node dist/cli.js files upload --input /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.6ZIgC0zV7s/smoke.png --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
+- `node dist/cli.js markdown upload-images --input /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.6ZIgC0zV7s/input.md --output /var/folders/hz/jy0rr39j3xs0lfl8fl37pmyc0000gn/T/tmp.6ZIgC0zV7s/output.md --public --env test --config-path /Users/dede/.config/toollist/config.json --json`
+- `git fetch origin staging` (rework)
+- `git rebase origin/staging` (rework; branch was up to date)
+- `npm run lint` (post-sync rework)
+- `npm test` (post-sync rework)
+- `npm run build` (post-sync rework)
 
 ## Validation results
 
@@ -52,6 +69,17 @@ Add retry behavior to the `files upload` presigned PUT phase. The intended behav
 - Hosted smoke auth helper: `status: ok`, `auth_mode: config`, `environment: test`, config path `/Users/dede/.config/toollist/config.json`.
 - Hosted smoke `files upload --public --env test`: passed; returned `file.status: uploaded` and a public test image URL.
 - Hosted smoke `markdown upload-images --input --output --public --env test`: passed; uploaded 1 local image and rewrote the Markdown output to `https://img-test.tooli.st/...`.
+- Rework red: focused upload suite failed on the new 5xx exhaustion detail assertion. Expected `Upload request failed: upload responded with HTTP 503 Service Unavailable`; received `Upload request failed: upload responded with HTTP 503`.
+- Rework green: focused upload suite passed after including `statusText` in retryable upload response errors, 1 file and 14 tests.
+- Rework `npm run lint`: passed.
+- Rework `npm test`: passed, 32 files and 216 tests.
+- Rework `npm run build`: passed.
+- Rework hosted smoke auth helper: `status: ok`, `auth_mode: config`, `environment: test`, config path `/Users/dede/.config/toollist/config.json`.
+- Rework hosted smoke `files upload --public --env test`: passed; returned `file.status: uploaded` and a public test image URL.
+- Rework hosted smoke `markdown upload-images --input --output --public --env test`: passed; uploaded 1 local image and rewrote the Markdown output to `https://img-test.tooli.st/...`.
+- Post-sync rework `npm run lint`: passed.
+- Post-sync rework `npm test`: passed, 32 files and 216 tests.
+- Post-sync rework `npm run build`: passed.
 
 ## Blockers
 

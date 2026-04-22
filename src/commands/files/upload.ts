@@ -72,6 +72,11 @@ function isRetryableUploadResponse(response: Response): boolean {
   return response.status >= 500 && response.status <= 599;
 }
 
+function formatUploadResponseStatus(response: Response): string {
+  const statusText = response.statusText.trim();
+  return statusText ? `HTTP ${response.status} ${statusText}` : `HTTP ${response.status}`;
+}
+
 function createDefaultDependencies(): UploadFileDependencies {
   return {
     apiRequest,
@@ -138,7 +143,7 @@ export async function uploadCommand(
       });
 
       if (isRetryableUploadResponse(response)) {
-        throw new Error(`upload responded with HTTP ${response.status}`);
+        throw new Error(`upload responded with ${formatUploadResponseStatus(response)}`);
       }
 
       return response;
