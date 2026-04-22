@@ -175,7 +175,7 @@ export function getMarkdownHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toollist markdown upload-images (--input <path> (--in-place | --output <path>) | --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>)) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Commands:',
     '  upload-images  Upload local Markdown images and rewrite them to public URLs',
@@ -189,14 +189,16 @@ export function getMarkdownUploadImagesHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
-    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toollist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toollist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Options:',
     '  --input        Markdown file path for single-file mode',
     '  --root         Root directory for batch mode',
     '  --glob         Glob pattern used with --root (defaults to *.md)',
     '  --in-place     Write updated Markdown back to the source file',
+    '  --output       Write single-file output Markdown to this path',
+    '  --output-dir   Write batch output Markdown under this directory',
     '  --public       Required safety flag for public image uploads',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     ENVIRONMENT_OPTION_HELP,
@@ -787,6 +789,8 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
   root?: string;
   glob?: string;
   inPlace?: boolean;
+  outputDir?: string;
+  output?: string;
   public?: boolean;
   baseUrl?: string;
   env?: ToolistEnvironment;
@@ -801,6 +805,8 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
     root?: string;
     glob?: string;
     inPlace?: boolean;
+    outputDir?: string;
+    output?: string;
     public?: boolean;
     baseUrl?: string;
     env?: ToolistEnvironment;
@@ -904,6 +910,28 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.glob = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.output = value;
       if (consumeNext) {
         index += 1;
       }
@@ -2911,8 +2939,33 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           return 1;
         }
 
-        if (!parsed.inPlace) {
-          io.stderr('Missing required option: --in-place\n');
+        if (parsed.inPlace && parsed.outputDir) {
+          io.stderr('Pass either --in-place or --output-dir, not both.\n');
+          return 1;
+        }
+
+        if (parsed.inPlace && parsed.output) {
+          io.stderr('Pass either --in-place or --output, not both.\n');
+          return 1;
+        }
+
+        if (parsed.output && parsed.outputDir) {
+          io.stderr('Pass either --output or --output-dir, not both.\n');
+          return 1;
+        }
+
+        if (parsed.output && !parsed.input) {
+          io.stderr('--output is only supported with --input.\n');
+          return 1;
+        }
+
+        if (parsed.outputDir && !parsed.root) {
+          io.stderr('--output-dir is only supported with --root.\n');
+          return 1;
+        }
+
+        if (!parsed.inPlace && !parsed.output && !parsed.outputDir) {
+          io.stderr('Missing write target: pass --in-place, --output, or --output-dir\n');
           return 1;
         }
 
@@ -2926,7 +2979,9 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           input: parsed.input,
           root: parsed.root,
           glob: parsed.glob,
-          inPlace: true,
+          inPlace: parsed.inPlace ?? false,
+          outputDir: parsed.outputDir,
+          output: parsed.output,
           public: true,
           dryRun: parsed.dryRun,
           skipMissing: parsed.skipMissing,
