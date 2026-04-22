@@ -466,7 +466,10 @@ describe('image remove-watermark-batch command', () => {
       method: 'POST',
       path: '/api/v1/files/create-upload',
       stage: 'Create upload request failed',
-      stage: 'Create upload request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: {
         filename: 'inputs.zip',
         mime_type: 'application/zip',
