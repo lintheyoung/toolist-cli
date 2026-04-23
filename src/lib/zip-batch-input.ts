@@ -15,7 +15,12 @@ export interface CreateZipBatchInputResult {
   cleanupPath?: string;
 }
 
-type ZipEntry = {
+export interface StoredZipEntryInput {
+  name: string;
+  data: Buffer;
+}
+
+type ZipEntry = StoredZipEntryInput & {
   name: string;
   data: Buffer;
   crc32: number;
@@ -129,24 +134,40 @@ function collectUniquePaths(args: CreateZipBatchInputArgs, globbedPaths: string[
   });
 }
 
-async function buildZipEntries(inputPaths: string[]): Promise<ZipEntry[]> {
-  let offset = 0;
-  const entries: ZipEntry[] = [];
+async function buildZipEntryInputs(inputPaths: string[]): Promise<StoredZipEntryInput[]> {
+  const entries: StoredZipEntryInput[] = [];
 
   for (const inputPath of inputPaths) {
     const data = await readFile(inputPath);
-    const entry: ZipEntry = {
+    const entry: StoredZipEntryInput = {
       name: basename(inputPath),
       data,
-      crc32: computeCrc32(data),
-      offset,
     };
 
     entries.push(entry);
-    offset += 30 + Buffer.byteLength(entry.name, 'utf8') + data.length;
   }
 
   return entries;
+}
+
+function prepareZipEntries(entries: StoredZipEntryInput[]): ZipEntry[] {
+  let offset = 0;
+
+  return entries.map((entry) => {
+    const preparedEntry: ZipEntry = {
+      ...entry,
+      crc32: computeCrc32(entry.data),
+      offset,
+    };
+
+    offset += 30 + Buffer.byteLength(entry.name, 'utf8') + entry.data.length;
+    return preparedEntry;
+  });
+}
+
+export function createStoredZipArchive(entries: StoredZipEntryInput[]): Buffer {
+  const preparedEntries = prepareZipEntries(entries);
+  return buildZipArchive(preparedEntries);
 }
 
 function buildZipArchive(entries: ZipEntry[]): Buffer {
@@ -165,8 +186,7 @@ function buildZipArchive(entries: ZipEntry[]): Buffer {
 export async function createZipBatchInput(
   args: CreateZipBatchInputArgs,
 ): Promise<CreateZipBatchInputResult> {
-  const globbedPaths = args.inputGlob ? await glob(args.inputGlob) : [];
-  const inputPaths = collectUniquePaths(args, globbedPaths);
+  const inputPaths = await resolveZipBatchInputPaths(args);
 
   if (inputPaths.length === 0) {
     throw new Error('Remove watermark batch requires at least one input.');
@@ -180,9 +200,9 @@ export async function createZipBatchInput(
   try {
     await mkdir(outputDir, { recursive: true });
 
-    const entries = await buildZipEntries(inputPaths);
+    const entries = await buildZipEntryInputs(inputPaths);
     const zipPath = join(outputDir, 'inputs.zip');
-    const archive = buildZipArchive(entries);
+    const archive = createStoredZipArchive(entries);
 
     await writeFile(zipPath, archive);
 
@@ -198,4 +218,9 @@ export async function createZipBatchInput(
 
     throw error;
   }
+}
+
+export async function resolveZipBatchInputPaths(args: CreateZipBatchInputArgs): Promise<string[]> {
+  const globbedPaths = args.inputGlob ? await glob(args.inputGlob) : [];
+  return collectUniquePaths(args, globbedPaths);
 }

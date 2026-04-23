@@ -283,7 +283,7 @@ export function getImageHelp(): string {
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -384,11 +384,12 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
     '  --input-glob   Glob pattern for input files',
+    '  --chunk-size   Input files per hosted job, maximum 5 (defaults to 5)',
     '  --wait         Wait for the batch job to finish',
     '  --timeout      Maximum wait time in seconds',
     '  --output       Download results.zip to a local path',
@@ -1259,9 +1260,10 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
   return parsed;
 }
 
-function parseImageRemoveWatermarkBatchArgs(args: string[]): {
+function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean }): {
   inputs?: string[];
   inputGlob?: string;
+  chunkSize?: number;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -1273,6 +1275,7 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
   const parsed: {
     inputs?: string[];
     inputGlob?: string;
+    chunkSize?: number;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -1370,6 +1373,32 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--chunk-size') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      if (rawValue === undefined) {
+        missingOptionValue(flag);
+      }
+
+      const chunkSizeValue = Number(rawValue);
+
+      if (!Number.isInteger(chunkSizeValue) || chunkSizeValue <= 0) {
+        throw new Error('Invalid value for --chunk-size.');
+      }
+
+      if (chunkSizeValue > 5) {
+        throw new Error('--chunk-size cannot be greater than 5.');
+      }
+
+      parsed.chunkSize = chunkSizeValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--wait') {
       parsed.wait = true;
       continue;
@@ -1412,8 +1441,15 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
 }
 
 const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
-const parseDocumentDocxToMarkdownBatchArgs = parseImageRemoveWatermarkBatchArgs;
 const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
+
+function parseImageRemoveWatermarkBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
+  return parseZipJobBatchArgs(args, { allowChunkSize: true });
+}
+
+function parseDocumentDocxToMarkdownBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
+  return parseZipJobBatchArgs(args, { allowChunkSize: false });
+}
 
 function parseImageResizeArgs(args: string[]): {
   input?: string;
@@ -3214,6 +3250,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         const result = await imageRemoveWatermarkBatchCommand({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
+          chunkSize: parsed.chunkSize,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,

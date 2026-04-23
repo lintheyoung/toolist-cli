@@ -21,6 +21,9 @@ describe('progress reporter', () => {
     reporter.jobStatus('queued');
     reporter.jobStatus('running');
     reporter.downloadingOutput('file_output_123');
+    reporter.preparingChunk(1, 6, 5);
+    reporter.savedChunkOutput('/tmp/chunk-001.zip');
+    reporter.mergingChunkOutputs();
     reporter.savedOutput('/tmp/output.zip');
 
     expect(stderr).toBe(
@@ -33,6 +36,9 @@ describe('progress reporter', () => {
         'Status: queued',
         'Status: running',
         'Downloading output: file_output_123',
+        'Preparing chunk 1/6 (5 files)...',
+        'Saved chunk output: /tmp/chunk-001.zip',
+        'Merging chunk outputs...',
         'Saved output: /tmp/output.zip',
       ].join('\n') + '\n',
     );
@@ -47,6 +53,9 @@ describe('progress reporter', () => {
       silentProgressReporter.waitingForJob();
       silentProgressReporter.jobStatus('queued');
       silentProgressReporter.downloadingOutput('file_output_123');
+      silentProgressReporter.preparingChunk(1, 6, 5);
+      silentProgressReporter.savedChunkOutput('/tmp/chunk-001.zip');
+      silentProgressReporter.mergingChunkOutputs();
       silentProgressReporter.savedOutput('/tmp/output.zip');
     }).not.toThrow();
   });
