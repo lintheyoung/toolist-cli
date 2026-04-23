@@ -6,6 +6,8 @@ Toollist tools from scripts, terminals, and agent workflows.
 
 ## Install
 
+Requires Node.js 18.18 or newer.
+
 Run it without installing anything:
 
 ```bash
