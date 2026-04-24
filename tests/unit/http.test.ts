@@ -331,6 +331,49 @@ describe('apiRequest', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('parses retryable 5xx responses normally when no stage retry loop is active', async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Gateway unavailable.',
+          },
+          request_id: 'req_503',
+        }),
+        {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: {
+            'content-type': 'application/json',
+          },
+        },
+      ),
+    );
+
+    vi.stubGlobal('fetch', fetch);
+
+    const { apiRequest } = await import('../../src/lib/http.js');
+
+    await expect(
+      apiRequest({
+        baseUrl: 'https://api.example.com',
+        method: 'GET',
+        path: '/api/v1/tools',
+        retry: {
+          attempts: 2,
+          delaysMs: [0],
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Gateway unavailable.',
+      status: 503,
+      requestId: 'req_503',
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('normalizes invalid JSON response bodies into structured CLI errors', async () => {
     const fetch = vi.fn(async () =>
       new Response('{"data":', {

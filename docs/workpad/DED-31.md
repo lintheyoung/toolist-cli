@@ -43,6 +43,13 @@ Intended change:
 - `npm test`
 - `npm run build`
 - `git diff --check`
+- Opencode review round 1 requested using retry option objects consistently and hardening retry-marker creation when retry options are passed without a staged retry loop.
+- `npm test -- tests/unit/http.test.ts` failed before the hardening fix with a generic unexpected error for an unstaged retryable 503.
+- `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts tests/integration/files-upload-command.test.ts tests/integration/jobs-command.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
 - Opencode review round 1 requested making retryable 5xx message extraction clearer about intentional response-body consumption.
 - `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`
 - `npm run lint`
@@ -75,6 +82,8 @@ Intended change:
 - Second rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
 - Third rework: retryable 5xx message extraction now snapshots status/text and parses the transient body locally with a comment explaining that the retry response is discarded after classification.
 - Third rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
+- Fourth rework: retry-marker 5xx errors are now created only when a staged retry loop is active, unstaged retry options still parse structured 5xx API errors normally, and upload/job polling forward `retry.onRetry` consistently.
+- Fourth rework validation: targeted retry/upload/job tests passed, `npm run lint`, `npm test` (34 files, 229 tests), `npm run build`, and `git diff --check` passed.
 
 ## Blocker Notes
 

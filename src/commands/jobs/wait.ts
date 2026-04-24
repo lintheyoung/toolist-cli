@@ -72,7 +72,7 @@ export async function waitJobCommand(
       stage: 'Job polling failed',
       attempts: retry.attempts,
       delaysMs: retry.delaysMs,
-      onRetry: args.onRetry,
+      onRetry: retry.onRetry,
       sleep: async (ms) => {
         const remainingMs = deadline - deps.now();
 

@@ -134,7 +134,7 @@ export async function uploadCommand(
     stage: 'Upload request failed',
     attempts: retry.attempts,
     delaysMs: retry.delaysMs,
-    onRetry: args.onRetry,
+    onRetry: retry.onRetry,
     fn: async () => {
       const response = await deps.fetch(createUploadResponse.data.upload_url, {
         method: 'PUT',

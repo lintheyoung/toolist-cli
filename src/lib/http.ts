@@ -162,7 +162,7 @@ export async function apiRequest<T>(args: {
       body,
     });
 
-    if (args.retry && isRetryableHttpStatus(result.status)) {
+    if (args.stage && args.retry && isRetryableHttpStatus(result.status)) {
       // Retryable 5xx responses are discarded after this point, so it is safe to
       // consume the body here to preserve the final staged error message.
       throw new RetryableHttpResponseError(
