@@ -508,6 +508,79 @@ describe('jobs commands', () => {
     expect(sleep).toHaveBeenCalledWith(1000);
   });
 
+  it('retries a transient polling 5xx API error and continues waiting', async () => {
+    const { CliError } = await import('../../src/lib/errors.js');
+    const getJob = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CliError({
+          code: 'INTERNAL_UNEXPECTED_ERROR',
+          message: 'Gateway unavailable.',
+          status: 503,
+          requestId: 'req_polling_503',
+        }),
+      )
+      .mockResolvedValueOnce({
+        id: 'job_123',
+        status: 'succeeded',
+        toolName: 'image.convert_format',
+        toolVersion: '2026-04-12',
+      });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result.status).toBe('succeeded');
+    expect(getJob).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('does not retry polling 4xx API errors', async () => {
+    const { CliError } = await import('../../src/lib/errors.js');
+    const getJob = vi.fn(async () => {
+      throw new CliError({
+        code: 'JOB_NOT_FOUND',
+        message: 'Job not found.',
+        status: 404,
+        requestId: 'req_polling_404',
+      });
+    });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 120,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => 0,
+        },
+      ),
+    ).rejects.toThrow('Job polling failed: Job not found.');
+    expect(getJob).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it('adds polling stage context after retry exhaustion', async () => {
     const getJob = vi.fn(async () => {
       throw new TypeError('fetch failed');

@@ -43,6 +43,21 @@ Intended change:
 - `npm test`
 - `npm run build`
 - `git diff --check`
+- Human review requested two remaining retry gaps: `jobs wait` should retry staged polling `CliError` values with `status >= 500`, and output downloads should retry HTTP 5xx responses while keeping 4xx fail-fast.
+- `npm test -- tests/integration/jobs-command.test.ts -t "retries a transient polling 5xx API error"` failed before the rework fix with `Job polling failed: Gateway unavailable.` after one attempt.
+- `npm test -- tests/integration/image-remove-watermark-command.test.ts -t "retries a transient output download 5xx response"` failed before the rework fix because the command exited after the first 503 download response.
+- `npm test -- tests/integration/jobs-command.test.ts -t "retries a transient polling 5xx API error" && npm test -- tests/integration/image-remove-watermark-command.test.ts -t "retries a transient output download 5xx response"`
+- `npm test -- tests/integration/jobs-command.test.ts tests/integration/image-remove-watermark-command.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
+- `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
+- `node dist/cli.js whoami --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after output-download/polling rework.
+- `node dist/cli.js tools list --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after output-download/polling rework.
+- `node dist/cli.js files upload --input <png> --public --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after output-download/polling rework.
+- `node dist/cli.js markdown upload-images --input <md> --output <md> --report <json> --public --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after output-download/polling rework.
+- `git fetch origin staging`
 - Opencode review round 2 requested preserving `CliError` structured fields after retryable 5xx retry exhaustion.
 - `npm test -- tests/unit/http.test.ts` failed before the structured-error fix because the final staged 503 was a plain `Error`.
 - `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`
@@ -93,6 +108,10 @@ Intended change:
 - Fourth rework validation: targeted retry/upload/job tests passed, `npm run lint`, `npm test` (34 files, 229 tests), `npm run build`, and `git diff --check` passed.
 - Fifth rework: retry-exhausted 5xx API errors now preserve `CliError` fields while adding stage context to the final message.
 - Fifth rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 229 tests), `npm run build`, and `git diff --check` passed.
+- Sixth rework: `jobs wait` now retries staged polling `CliError` values with `status >= 500` and still fails fast on 4xx. Output download callers now share a helper that retries transport failures and HTTP 5xx responses inside `withRetry()` while returning 4xx responses to the existing single-attempt failure path.
+- Sixth rework validation: targeted red tests failed before the fix and passed after the fix; `npm test -- tests/integration/jobs-command.test.ts tests/integration/image-remove-watermark-command.test.ts`, `npm run lint`, `npm test` (34 files, 232 tests), `npm run build`, and `git diff --check` passed.
+- Sixth rework hosted smoke: whoami/tools list/files upload/markdown upload-images each passed 5 consecutive `--env test` runs using saved CLI config. Smoke observed transient create/complete/upload fetch failures on stderr during upload flows and all recovered.
+- Sync: `origin/staging` remained at `5afc5792d905286b6a163fe57482cf47939e1255` and is still an ancestor of the issue branch, so no rebase was needed.
 
 ## Blocker Notes
 

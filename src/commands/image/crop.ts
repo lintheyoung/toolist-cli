@@ -1,14 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
 import {
-  extendedNetworkRetryOptions,
   networkRetryOptions,
   type RetryHandler,
   withRetryHandler,
-  withRetry,
 } from '../../lib/retry.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
@@ -132,10 +131,6 @@ function normalizeTargetMimeType(value: string): string {
   return mimeType;
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
   args: Pick<ImageCropCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
@@ -145,18 +140,12 @@ async function downloadOutputFile(
     return;
   }
 
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
-    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
     onRetry: args.onRetry,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download cropped file ${outputFileId}.`);

@@ -3,15 +3,14 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
 import { assertJobSucceeded, JobFailureError } from '../../lib/job-errors.js';
 import {
-  extendedNetworkRetryOptions,
   networkRetryOptions,
   type RetryHandler,
   withRetryHandler,
-  withRetry,
 } from '../../lib/retry.js';
 import {
   silentProgressReporter,
@@ -237,28 +236,18 @@ function getBatchCount(job: ImageRemoveWatermarkBatchJobResult, key: 'processedF
   );
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
   args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token' | 'onRetry'>,
   outputFileId: string,
   outputPath: string,
   dependencies: Pick<ImageRemoveWatermarkBatchDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
-    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
     onRetry: args.onRetry,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download watermark batch output file ${outputFileId}.`);

@@ -4,15 +4,14 @@ import { basename, dirname, join } from 'node:path';
 
 import { uploadCommand } from '../commands/files/upload.js';
 import { waitJobCommand } from '../commands/jobs/wait.js';
+import { fetchFileDownloadResponse } from './download.js';
 import { apiRequest } from './http.js';
 import { isCliError } from './errors.js';
 import { assertJobSucceeded } from './job-errors.js';
 import {
-  extendedNetworkRetryOptions,
   networkRetryOptions,
   type RetryHandler,
   withRetryHandler,
-  withRetry,
 } from './retry.js';
 import type { BatchManifest } from './batch-manifest.js';
 import { saveBatchState, type BatchItemState, type BatchState } from './batch-state.js';
@@ -106,10 +105,6 @@ function getOutputFilename(job: CreateJobResponse['data']['job'], fallbackName: 
   return outputFileId ?? fallbackName;
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 function formatError(error: unknown): BatchItemExecutionResult['error'] {
   if (isCliError(error)) {
     return {
@@ -141,18 +136,12 @@ async function downloadOutputFile(
 ): Promise<void> {
   await dependencies.mkdir(dirname(args.outputPath), { recursive: true });
 
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
-    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
     onRetry: args.onRetry,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download output file ${outputFileId}.`);

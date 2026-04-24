@@ -46,6 +46,18 @@ function isTimeoutError(error: unknown, jobId: string, timeoutSeconds: number): 
   );
 }
 
+function isRetryablePollingError(error: unknown, jobId: string, timeoutSeconds: number): boolean {
+  if (isTimeoutError(error, jobId, timeoutSeconds)) {
+    return false;
+  }
+
+  if (isCliError(error)) {
+    return error.status >= 500;
+  }
+
+  return true;
+}
+
 export async function waitJobCommand(
   args: WaitJobCommandArgs,
   dependencies: Partial<WaitJobDependencies> = {},
@@ -82,8 +94,7 @@ export async function waitJobCommand(
 
         await deps.sleep(Math.min(ms, remainingMs));
       },
-      shouldRetry: (error) =>
-        !isCliError(error) && !isTimeoutError(error, args.jobId, args.timeoutSeconds),
+      shouldRetry: (error) => isRetryablePollingError(error, args.jobId, args.timeoutSeconds),
       fn: () => {
         if (deps.now() >= deadline) {
           throw createTimeoutError(args.jobId, args.timeoutSeconds);
