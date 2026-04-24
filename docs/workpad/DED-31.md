@@ -43,6 +43,12 @@ Intended change:
 - `npm test`
 - `npm run build`
 - `git diff --check`
+- Opencode review round 1 requested making retryable 5xx message extraction clearer about intentional response-body consumption.
+- `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
 - `git fetch origin staging`
 - `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
 - `node dist/cli.js whoami --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after rework.
@@ -67,6 +73,8 @@ Intended change:
 - Rework hosted smoke: whoami and tools list each passed 5 consecutive `--env test` runs using saved CLI config.
 - Second rework: retryable 5xx message extraction now consumes the discarded retry response directly and no longer stores the discarded `Response` on the marker error.
 - Second rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
+- Third rework: retryable 5xx message extraction now snapshots status/text and parses the transient body locally with a comment explaining that the retry response is discarded after classification.
+- Third rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
 
 ## Blocker Notes
 

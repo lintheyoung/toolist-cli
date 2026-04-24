@@ -99,17 +99,21 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
-function formatHttpStatus(response: Response): string {
-  const statusText = response.statusText.trim();
+function formatHttpStatus(status: number, statusTextValue = ''): string {
+  const statusText = statusTextValue.trim();
 
   return statusText
-    ? `HTTP ${response.status} ${statusText}`
-    : `HTTP ${response.status}`;
+    ? `HTTP ${status} ${statusText}`
+    : `HTTP ${status}`;
 }
 
 async function retryableHttpResponseMessage(response: Response): Promise<string> {
+  const status = response.status;
+  const statusText = response.statusText;
+
   try {
-    const payload = await parseJsonResponse(response);
+    const text = await response.text();
+    const payload = text.length > 0 ? JSON.parse(text) as unknown : undefined;
 
     if (isObject(payload) && isObject(payload.error)) {
       const message = payload.error.message;
@@ -122,7 +126,7 @@ async function retryableHttpResponseMessage(response: Response): Promise<string>
     // Retry classification should not depend on whether a transient 5xx body is parseable.
   }
 
-  return formatHttpStatus(response);
+  return formatHttpStatus(status, statusText);
 }
 
 export async function apiRequest<T>(args: {
@@ -159,6 +163,8 @@ export async function apiRequest<T>(args: {
     });
 
     if (args.retry && isRetryableHttpStatus(result.status)) {
+      // Retryable 5xx responses are discarded after this point, so it is safe to
+      // consume the body here to preserve the final staged error message.
       throw new RetryableHttpResponseError(
         await retryableHttpResponseMessage(result),
       );
