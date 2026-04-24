@@ -43,6 +43,13 @@ Intended change:
 - `npm test`
 - `npm run build`
 - `git diff --check`
+- Opencode review round 2 requested preserving `CliError` structured fields after retryable 5xx retry exhaustion.
+- `npm test -- tests/unit/http.test.ts` failed before the structured-error fix because the final staged 503 was a plain `Error`.
+- `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
 - Opencode review round 1 requested using retry option objects consistently and hardening retry-marker creation when retry options are passed without a staged retry loop.
 - `npm test -- tests/unit/http.test.ts` failed before the hardening fix with a generic unexpected error for an unstaged retryable 503.
 - `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts tests/integration/files-upload-command.test.ts tests/integration/jobs-command.test.ts`
@@ -84,6 +91,8 @@ Intended change:
 - Third rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
 - Fourth rework: retry-marker 5xx errors are now created only when a staged retry loop is active, unstaged retry options still parse structured 5xx API errors normally, and upload/job polling forward `retry.onRetry` consistently.
 - Fourth rework validation: targeted retry/upload/job tests passed, `npm run lint`, `npm test` (34 files, 229 tests), `npm run build`, and `git diff --check` passed.
+- Fifth rework: retry-exhausted 5xx API errors now preserve `CliError` fields while adding stage context to the final message.
+- Fifth rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 229 tests), `npm run build`, and `git diff --check` passed.
 
 ## Blocker Notes
 

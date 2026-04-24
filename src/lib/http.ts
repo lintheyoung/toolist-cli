@@ -47,9 +47,15 @@ function unexpectedError(status = 0): CliError {
   });
 }
 
-class RetryableHttpResponseError extends Error {
-  constructor(message: string) {
-    super(message);
+class RetryableHttpResponseError extends CliError {
+  constructor(error: CliError) {
+    super({
+      code: error.code,
+      message: error.message,
+      status: error.status,
+      details: error.details,
+      requestId: error.requestId,
+    });
   }
 }
 
@@ -107,7 +113,7 @@ function formatHttpStatus(status: number, statusTextValue = ''): string {
     : `HTTP ${status}`;
 }
 
-async function retryableHttpResponseMessage(response: Response): Promise<string> {
+async function retryableHttpResponseError(response: Response): Promise<RetryableHttpResponseError> {
   const status = response.status;
   const statusText = response.statusText;
 
@@ -115,18 +121,18 @@ async function retryableHttpResponseMessage(response: Response): Promise<string>
     const text = await response.text();
     const payload = text.length > 0 ? JSON.parse(text) as unknown : undefined;
 
-    if (isObject(payload) && isObject(payload.error)) {
-      const message = payload.error.message;
-
-      if (typeof message === 'string' && message.trim()) {
-        return message;
-      }
-    }
+    return new RetryableHttpResponseError(toCliError(status, payload));
   } catch {
     // Retry classification should not depend on whether a transient 5xx body is parseable.
   }
 
-  return formatHttpStatus(status, statusText);
+  return new RetryableHttpResponseError(
+    new CliError({
+      code: 'INTERNAL_UNEXPECTED_ERROR',
+      message: formatHttpStatus(status, statusText),
+      status,
+    }),
+  );
 }
 
 export async function apiRequest<T>(args: {
@@ -165,9 +171,7 @@ export async function apiRequest<T>(args: {
     if (args.stage && args.retry && isRetryableHttpStatus(result.status)) {
       // Retryable 5xx responses are discarded after this point, so it is safe to
       // consume the body here to preserve the final staged error message.
-      throw new RetryableHttpResponseError(
-        await retryableHttpResponseMessage(result),
-      );
+      throw await retryableHttpResponseError(result);
     }
 
     return result;

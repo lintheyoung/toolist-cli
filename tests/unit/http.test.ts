@@ -327,7 +327,12 @@ describe('apiRequest', () => {
           delaysMs: [0],
         },
       }),
-    ).rejects.toThrow('List tools request failed: Gateway unavailable.');
+    ).rejects.toMatchObject({
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'List tools request failed: Gateway unavailable.',
+      status: 503,
+      requestId: 'req_503',
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 

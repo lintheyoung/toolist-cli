@@ -1,3 +1,5 @@
+import { CliError, isCliError } from './errors.js';
+
 export const NETWORK_RETRY_ATTEMPTS = 3;
 export const NETWORK_RETRY_DELAYS_MS = [1000, 3000] as const;
 export const EXTENDED_NETWORK_RETRY_ATTEMPTS = 4;
@@ -34,6 +36,16 @@ function withStagePrefix(stage: string, error: unknown): Error {
 
   if (message.startsWith(`${stage}: `)) {
     return error instanceof Error ? error : new Error(message);
+  }
+
+  if (isCliError(error)) {
+    return new CliError({
+      code: error.code,
+      message: `${stage}: ${message}`,
+      status: error.status,
+      details: error.details,
+      requestId: error.requestId,
+    });
   }
 
   return new Error(`${stage}: ${message}`);
