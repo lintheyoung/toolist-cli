@@ -141,6 +141,16 @@ describe('retry helpers', () => {
     );
   });
 
+  it('keeps retry handlers directly readable without adding them to spreads', async () => {
+    const onRetry = vi.fn();
+    const { withRetryHandler } = await import('../../src/lib/retry.js');
+
+    const args = withRetryHandler({ value: 1 }, onRetry);
+
+    expect(args.onRetry).toBe(onRetry);
+    expect({ ...args }).toEqual({ value: 1 });
+  });
+
   it('classifies common transport failures as retryable', async () => {
     const { isRetryableTransportError } = await import('../../src/lib/retry.js');
     const reset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });

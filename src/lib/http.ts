@@ -48,13 +48,8 @@ function unexpectedError(status = 0): CliError {
 }
 
 class RetryableHttpResponseError extends Error {
-  constructor(readonly response: Response) {
-    const statusText = response.statusText.trim();
-    super(
-      statusText
-        ? `HTTP ${response.status} ${statusText}`
-        : `HTTP ${response.status}`,
-    );
+  constructor(readonly response: Response, message = formatHttpStatus(response)) {
+    super(message);
   }
 }
 
@@ -104,6 +99,32 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+function formatHttpStatus(response: Response): string {
+  const statusText = response.statusText.trim();
+
+  return statusText
+    ? `HTTP ${response.status} ${statusText}`
+    : `HTTP ${response.status}`;
+}
+
+async function retryableHttpResponseMessage(response: Response): Promise<string> {
+  try {
+    const payload = await parseJsonResponse(response.clone());
+
+    if (isObject(payload) && isObject(payload.error)) {
+      const message = payload.error.message;
+
+      if (typeof message === 'string' && message.trim()) {
+        return message;
+      }
+    }
+  } catch {
+    // Retry classification should not depend on whether a transient 5xx body is parseable.
+  }
+
+  return formatHttpStatus(response);
+}
+
 export async function apiRequest<T>(args: {
   baseUrl: string;
   token?: string;
@@ -138,7 +159,10 @@ export async function apiRequest<T>(args: {
     });
 
     if (args.retry && isRetryableHttpStatus(result.status)) {
-      throw new RetryableHttpResponseError(result);
+      throw new RetryableHttpResponseError(
+        result,
+        await retryableHttpResponseMessage(result),
+      );
     }
 
     return result;

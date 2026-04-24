@@ -35,6 +35,18 @@ Intended change:
 - `node dist/cli.js tools list --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times.
 - `node dist/cli.js files upload --input <png> --public --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times.
 - `node dist/cli.js markdown upload-images --input <md> --output <md> --report <json> --public --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times.
+- Rework review round 1 found that retryable 5xx API responses lost structured error messages after retry exhaustion.
+- `npm test -- tests/unit/http.test.ts` failed before the rework fix with `List tools request failed: HTTP 503 Service Unavailable` instead of the structured API message.
+- `npm test -- tests/unit/http.test.ts`
+- `npm test -- tests/unit/retry.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
+- `git fetch origin staging`
+- `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
+- `node dist/cli.js whoami --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after rework.
+- `node dist/cli.js tools list --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after rework.
 
 ## Validation Results
 
@@ -44,6 +56,9 @@ Intended change:
 - Hosted smoke helper: `status: ok`, `auth_mode: config`, test config path `/Users/dede/.config/toollist/config.json`.
 - Hosted smoke: whoami/tools list/files upload/markdown upload-images each passed 5 consecutive `--env test` runs.
 - Hosted smoke observability evidence: transient `Whoami request failed: fetch failed` and `Create upload request failed: fetch failed` both emitted retry lines to stderr and recovered.
+- Rework regression: structured retryable 5xx API messages are preserved after retry exhaustion; `tests/unit/http.test.ts` now covers the exhausted 503 case.
+- Rework validation: `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
+- Rework hosted smoke: whoami and tools list each passed 5 consecutive `--env test` runs using saved CLI config.
 
 ## Blocker Notes
 
