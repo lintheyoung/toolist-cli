@@ -47,6 +47,12 @@ Intended change:
 - `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
 - `node dist/cli.js whoami --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after rework.
 - `node dist/cli.js tools list --env test --config-path /Users/dede/.config/toollist/config.json --json` looped 5 times after rework.
+- Opencode review round 1 requested simplifying `src/lib/http.ts` retryable 5xx body handling to avoid `response.clone()` ambiguity.
+- `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+- `git diff --check`
 
 ## Validation Results
 
@@ -59,6 +65,8 @@ Intended change:
 - Rework regression: structured retryable 5xx API messages are preserved after retry exhaustion; `tests/unit/http.test.ts` now covers the exhausted 503 case.
 - Rework validation: `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
 - Rework hosted smoke: whoami and tools list each passed 5 consecutive `--env test` runs using saved CLI config.
+- Second rework: retryable 5xx message extraction now consumes the discarded retry response directly and no longer stores the discarded `Response` on the marker error.
+- Second rework validation: `npm test -- tests/unit/http.test.ts tests/unit/retry.test.ts`, `npm run lint`, `npm test` (34 files, 228 tests), `npm run build`, and `git diff --check` passed.
 
 ## Blocker Notes
 

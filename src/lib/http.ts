@@ -48,7 +48,7 @@ function unexpectedError(status = 0): CliError {
 }
 
 class RetryableHttpResponseError extends Error {
-  constructor(readonly response: Response, message = formatHttpStatus(response)) {
+  constructor(message: string) {
     super(message);
   }
 }
@@ -109,7 +109,7 @@ function formatHttpStatus(response: Response): string {
 
 async function retryableHttpResponseMessage(response: Response): Promise<string> {
   try {
-    const payload = await parseJsonResponse(response.clone());
+    const payload = await parseJsonResponse(response);
 
     if (isObject(payload) && isObject(payload.error)) {
       const message = payload.error.message;
@@ -160,7 +160,6 @@ export async function apiRequest<T>(args: {
 
     if (args.retry && isRetryableHttpStatus(result.status)) {
       throw new RetryableHttpResponseError(
-        result,
         await retryableHttpResponseMessage(result),
       );
     }
