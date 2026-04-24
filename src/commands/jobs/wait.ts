@@ -1,7 +1,6 @@
 import { getJobCommand, type GetJobCommandArgs, type GetJobCommandResult } from './get.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
   withRetry,
 } from '../../lib/retry.js';
 import { isCliError } from '../../lib/errors.js';
@@ -59,6 +58,7 @@ export async function waitJobCommand(
   const startedAt = deps.now();
   const timeoutMs = args.timeoutSeconds * 1000;
   const deadline = startedAt + timeoutMs;
+  const retry = extendedNetworkRetryOptions(args.onRetry);
   let lastStatus: string | undefined;
 
   while (true) {
@@ -70,8 +70,9 @@ export async function waitJobCommand(
 
     const job = await withRetry({
       stage: 'Job polling failed',
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
+      attempts: retry.attempts,
+      delaysMs: retry.delaysMs,
+      onRetry: args.onRetry,
       sleep: async (ms) => {
         const remainingMs = deadline - deps.now();
 
@@ -94,6 +95,7 @@ export async function waitJobCommand(
           token: args.token,
           configPath: args.configPath,
           stage: 'Job polling failed',
+          retry: false,
         });
       },
     });

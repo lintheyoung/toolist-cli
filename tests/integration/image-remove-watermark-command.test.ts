@@ -661,7 +661,8 @@ describe('image remove-watermark command', () => {
       },
     });
     expect(await readFile(outputPath)).toEqual(Buffer.from('clean png bytes'));
-    expect(result.stderr).not.toContain('fetch failed');
+    expect(result.stderr).toContain('Output download failed: fetch failed');
+    expect(result.stderr).toContain('Retrying output download (1/4) in 1000ms...');
   }, 10_000);
 
   it('prints output download stage context after retry exhaustion', async () => {
@@ -746,8 +747,8 @@ describe('image remove-watermark command', () => {
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain('Downloading output: file_output_123');
     expect(result.stderr).toContain('Output download failed: fetch failed');
-    expect(fetch).toHaveBeenCalledTimes(3);
-  }, 10_000);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  }, 20_000);
 
   it('fails when the downloaded output cannot be retrieved after waiting', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));

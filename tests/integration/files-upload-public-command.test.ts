@@ -142,8 +142,8 @@ describe('public files upload command', () => {
       path: '/api/v1/files/create-upload',
       stage: 'Create upload request failed',
       retry: {
-        attempts: 3,
-        delaysMs: [1000, 3000],
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
       },
       body: {
         filename: 'photo.jpg',

@@ -4,6 +4,7 @@ import { runBatchCommand, type BatchRunResult } from '../batch/run.js';
 import type { BatchManifest, BatchManifestDefaults } from '../../lib/batch-manifest.js';
 import { buildHomogeneousImageBatchManifest } from './homogeneous-batch-manifest.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
+import { withRetryHandler, type RetryHandler } from '../../lib/retry.js';
 
 export interface ImageCropBatchCommandArgs {
   inputs?: string[];
@@ -22,6 +23,7 @@ export interface ImageCropBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface CropBatchManifestArgs {
@@ -138,7 +140,7 @@ export async function imageCropBatchCommand(
   });
 
   return deps.runBatchCommand(
-    {
+    withRetryHandler({
       manifestPath: '<image-crop-batch>',
       resume: args.resume ?? false,
       concurrency: args.concurrency,
@@ -146,7 +148,8 @@ export async function imageCropBatchCommand(
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    },
+      onRetry: args.onRetry,
+    }, args.onRetry),
     {
       readBatchManifest: async () => manifest,
     },

@@ -90,4 +90,66 @@ describe('retry helpers', () => {
     ).rejects.toThrow('Create job request failed: validation failed');
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  it('reports retry attempts before sleeping', async () => {
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce('ok');
+    const sleep = vi.fn(async () => undefined);
+    const onRetry = vi.fn();
+
+    const { withRetry } = await import('../../src/lib/retry.js');
+    const result = await withRetry({
+      stage: 'Upload request failed',
+      attempts: 4,
+      delaysMs: [1000, 3000, 7000],
+      fn,
+      sleep,
+      onRetry,
+    });
+
+    expect(result).toBe('ok');
+    expect(onRetry).toHaveBeenCalledWith({
+      stage: 'Upload request failed',
+      error: expect.any(TypeError),
+      retryAttempt: 1,
+      maxAttempts: 4,
+      delayMs: 1000,
+    });
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('formats retry progress for stderr without touching stdout', async () => {
+    const { createStderrRetryReporter } = await import('../../src/lib/retry.js');
+    let stderr = '';
+    const reporter = createStderrRetryReporter((chunk) => {
+      stderr += chunk;
+    });
+
+    reporter({
+      stage: 'Create upload request failed',
+      error: new TypeError('fetch failed'),
+      retryAttempt: 1,
+      maxAttempts: 4,
+      delayMs: 1000,
+    });
+
+    expect(stderr).toBe(
+      'Create upload request failed: fetch failed\n' +
+      'Retrying create upload request (1/4) in 1000ms...\n',
+    );
+  });
+
+  it('classifies common transport failures as retryable', async () => {
+    const { isRetryableTransportError } = await import('../../src/lib/retry.js');
+    const reset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    const undici = Object.assign(new Error('headers timeout'), { code: 'UND_ERR_HEADERS_TIMEOUT' });
+    const fetchFailed = new TypeError('fetch failed');
+
+    expect(isRetryableTransportError(fetchFailed)).toBe(true);
+    expect(isRetryableTransportError(reset)).toBe(true);
+    expect(isRetryableTransportError(undici)).toBe(true);
+    expect(isRetryableTransportError(new Error('validation failed'))).toBe(false);
+  });
 });

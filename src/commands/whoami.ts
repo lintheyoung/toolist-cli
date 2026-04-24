@@ -10,10 +10,12 @@ import {
   resolveSelectedProfileBaseUrl,
   type ToolistEnvironment,
 } from '../lib/environments.js';
+import { extendedNetworkRetryOptions, type RetryHandler } from '../lib/retry.js';
 
 export interface WhoamiCommandArgs {
   configPath?: string;
   env?: ToolistEnvironment;
+  onRetry?: RetryHandler;
 }
 
 export interface WhoamiCommandResult {
@@ -83,6 +85,8 @@ export async function whoamiCommand(
     token: profile.accessToken,
     method: 'GET',
     path: '/api/cli/me',
+    stage: 'Whoami request failed',
+    retry: extendedNetworkRetryOptions(args.onRetry),
   });
 
   return response.data;

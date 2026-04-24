@@ -4,8 +4,10 @@ import { writeFile } from 'node:fs/promises';
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
   withRetry,
 } from '../../lib/retry.js';
 import { uploadCommand } from '../files/upload.js';
@@ -24,6 +26,7 @@ export interface ImageResizeCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ImageResizeJobOutput {
@@ -132,7 +135,7 @@ function buildDownloadUrl(baseUrl: string, fileId: string): string {
 }
 
 async function downloadOutputFile(
-  args: Pick<ImageResizeCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  args: Pick<ImageResizeCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
   dependencies: Pick<ImageResizeDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
@@ -142,8 +145,9 @@ async function downloadOutputFile(
 
   const response = await withRetry({
     stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
+    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+    onRetry: args.onRetry,
     fn: () =>
       dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
         headers: {
@@ -169,12 +173,13 @@ export async function imageResizeCommand(
     ...dependencies,
   };
 
-  const sourceFile = await deps.uploadCommand({
+  const sourceFile = await deps.uploadCommand(withRetryHandler({
     input: args.input,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
-  });
+    onRetry: args.onRetry,
+  }, args.onRetry));
 
   const input: Record<string, unknown> = {
     input_file_id: sourceFile.file_id,
@@ -202,10 +207,7 @@ export async function imageResizeCommand(
     method: 'POST',
     path: '/api/v1/jobs',
     stage: 'Create job request failed',
-    retry: {
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
-    },
+    retry: networkRetryOptions(args.onRetry),
     body: {
       tool_name: 'image.resize',
       ...(args.sync ? { execution_mode: 'sync' as const } : {}),
@@ -222,13 +224,14 @@ export async function imageResizeCommand(
 
   const job = isTerminalJobStatus(createJobResponse.data.job.status)
     ? createJobResponse.data.job
-    : await deps.waitJobCommand({
+    : await deps.waitJobCommand(withRetryHandler({
         jobId: createJobResponse.data.job.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
-      });
+        onRetry: args.onRetry,
+      }, args.onRetry));
 
   assertJobSucceeded(job);
 
@@ -244,6 +247,7 @@ export async function imageResizeCommand(
         baseUrl: args.baseUrl,
         token: args.token,
         output: args.output,
+        onRetry: args.onRetry,
       },
       outputFileId,
       deps,

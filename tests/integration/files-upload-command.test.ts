@@ -205,8 +205,8 @@ describe('files upload command', () => {
       path: '/api/v1/files/create-upload',
       stage: 'Create upload request failed',
       retry: {
-        attempts: 3,
-        delaysMs: [1000, 3000],
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
       },
       body: {
         filename: 'photo.jpg',
@@ -233,8 +233,8 @@ describe('files upload command', () => {
       path: '/api/v1/files/file_123/complete',
       stage: 'Complete upload request failed',
       retry: {
-        attempts: 3,
-        delaysMs: [1000, 3000],
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
       },
       body: undefined,
     });
@@ -335,6 +335,7 @@ describe('files upload command', () => {
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'));
     vi.stubGlobal('fetch', fetch);
 
@@ -351,14 +352,16 @@ describe('files upload command', () => {
       ),
     ).rejects.toThrow('Complete upload request failed: fetch failed');
 
-    expect(fetch).toHaveBeenCalledTimes(5);
+    expect(fetch).toHaveBeenCalledTimes(6);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 7000);
   });
 
   it('retries create upload request transport failures and returns the file upload result', async () => {
     const fileContents = Buffer.from('hello world');
     const setTimeoutSpy = mockRetrySleepsImmediate();
+    let stderr = '';
 
     const fetch = vi
       .fn()
@@ -396,6 +399,9 @@ describe('files upload command', () => {
         input: '/tmp/photo.jpg',
         baseUrl: 'https://api.example.com',
         token: 'tgc_cli_secret',
+        onRetry: (event) => {
+          stderr += `${event.stage}:${event.retryAttempt}/${event.maxAttempts}:${event.delayMs}\n`;
+        },
       },
       mockFileReadDependencies(fileContents),
     );
@@ -420,6 +426,7 @@ describe('files upload command', () => {
       }),
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+    expect(stderr).toBe('Create upload request failed:1/4:1000\n');
   });
 
   it('keeps create upload stage context when transport failures exceed retry budget', async () => {
@@ -428,6 +435,7 @@ describe('files upload command', () => {
 
     const fetch = vi
       .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'));
@@ -446,9 +454,10 @@ describe('files upload command', () => {
       ),
     ).rejects.toThrow('Create upload request failed: fetch failed');
 
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 7000);
   });
 
   it('infers the DOCX mime type for document uploads', async () => {
@@ -502,8 +511,8 @@ describe('files upload command', () => {
       path: '/api/v1/files/create-upload',
       stage: 'Create upload request failed',
       retry: {
-        attempts: 3,
-        delaysMs: [1000, 3000],
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
       },
       body: {
         filename: 'document.docx',
@@ -578,8 +587,8 @@ describe('files upload command', () => {
       path: '/api/v1/files/file_123/complete',
       stage: 'Complete upload request failed',
       retry: {
-        attempts: 3,
-        delaysMs: [1000, 3000],
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
       },
       body: {
         sha256: createHash('sha256').update(fileContents).digest('hex'),
@@ -590,6 +599,7 @@ describe('files upload command', () => {
   it('retries presigned PUT transport failures and returns the file upload result', async () => {
     const fileContents = Buffer.from('hello world');
     const setTimeoutSpy = mockRetrySleepsImmediate();
+    let stderr = '';
 
     const fetch = vi
       .fn()
@@ -626,6 +636,9 @@ describe('files upload command', () => {
         input: '/tmp/photo.jpg',
         baseUrl: 'https://api.example.com',
         token: 'tgc_cli_secret',
+        onRetry: (event) => {
+          stderr += `${event.stage}:${event.retryAttempt}/${event.maxAttempts}:${event.delayMs}\n`;
+        },
       },
       {
         apiRequest,
@@ -639,6 +652,61 @@ describe('files upload command', () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+    expect(stderr).toBe('Upload request failed:1/4:1000\n');
+  });
+
+  it('reports complete upload request retries through onRetry', async () => {
+    const fileContents = Buffer.from('hello world');
+    const setTimeoutSpy = mockRetrySleepsImmediate();
+    let stderr = '';
+
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            file_id: 'file_123',
+            upload_url: 'https://upload.example.com/file_123',
+            headers: {
+              'content-type': 'image/jpeg',
+            },
+          },
+          request_id: 'req_create_upload_123',
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            file: {
+              fileId: 'file_123',
+              status: 'uploaded',
+            },
+          },
+          request_id: 'req_complete_upload_123',
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { uploadCommand } = await import('../../src/commands/files/upload.js');
+
+    const result = await uploadCommand(
+      {
+        input: '/tmp/photo.jpg',
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        onRetry: (event) => {
+          stderr += `${event.stage}:${event.retryAttempt}/${event.maxAttempts}:${event.delayMs}\n`;
+        },
+      },
+      mockFileReadDependencies(fileContents),
+    );
+
+    expect(result.file.status).toBe('uploaded');
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+    expect(stderr).toBe('Complete upload request failed:1/4:1000\n');
   });
 
   it('keeps upload stage context when presigned PUT transport failures exceed retry budget', async () => {
@@ -647,6 +715,7 @@ describe('files upload command', () => {
 
     const fetch = vi
       .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'))
       .mockRejectedValueOnce(new TypeError('fetch failed'));
@@ -678,9 +747,10 @@ describe('files upload command', () => {
         },
       ),
     ).rejects.toThrow('Upload request failed: fetch failed');
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 7000);
   });
 
   it('retries presigned PUT 5xx responses and returns the file upload result', async () => {
@@ -751,6 +821,9 @@ describe('files upload command', () => {
       )
       .mockResolvedValueOnce(
         new Response(null, { status: 503, statusText: 'Service Unavailable' }),
+      )
+      .mockResolvedValueOnce(
+        new Response(null, { status: 503, statusText: 'Service Unavailable' }),
       );
     vi.stubGlobal('fetch', fetch);
 
@@ -782,9 +855,10 @@ describe('files upload command', () => {
     ).rejects.toThrow(
       'Upload request failed: upload responded with HTTP 503 Service Unavailable',
     );
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(1, expect.any(Function), 1000);
     expect(setTimeoutSpy).toHaveBeenNthCalledWith(2, expect.any(Function), 3000);
+    expect(setTimeoutSpy).toHaveBeenNthCalledWith(3, expect.any(Function), 7000);
   });
 
   it('does not retry presigned PUT 4xx responses', async () => {

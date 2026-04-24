@@ -8,8 +8,10 @@ import { apiRequest } from './http.js';
 import { isCliError } from './errors.js';
 import { assertJobSucceeded } from './job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
   withRetry,
 } from './retry.js';
 import type { BatchManifest } from './batch-manifest.js';
@@ -132,6 +134,7 @@ async function downloadOutputFile(
     baseUrl: string;
     token: string;
     outputPath: string;
+    onRetry?: RetryHandler;
   },
   outputFileId: string,
   dependencies: Pick<BatchItemRunnerDependencies, 'fetch' | 'writeFile' | 'mkdir'>,
@@ -140,8 +143,9 @@ async function downloadOutputFile(
 
   const response = await withRetry({
     stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
+    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+    onRetry: args.onRetry,
     fn: () =>
       dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
         headers: {
@@ -168,6 +172,7 @@ export async function runBatchItem(
     };
     state: BatchState;
     statePath: string;
+    onRetry?: RetryHandler;
   },
   dependencies: Partial<BatchItemRunnerDependencies> = {},
 ): Promise<BatchItemExecutionResult> {
@@ -224,12 +229,13 @@ export async function runBatchItem(
         : args.item.input_file_id ?? stateItem.uploaded_file_id ?? null;
 
     if (!resumableJobId && !sourceFileId && args.item.input_path) {
-      const uploadedFile = await deps.uploadCommand({
+      const uploadedFile = await deps.uploadCommand(withRetryHandler({
         input: args.item.input_path,
         baseUrl: args.credentials.baseUrl,
         token: args.credentials.token,
         configPath: undefined,
-      });
+        onRetry: args.onRetry,
+      }, args.onRetry));
 
       sourceFileId = uploadedFile.file_id;
       await updateState({ uploaded_file_id: uploadedFile.file_id });
@@ -253,10 +259,7 @@ export async function runBatchItem(
         method: 'POST',
         path: '/api/v1/jobs',
         stage: 'Create job request failed',
-        retry: {
-          attempts: NETWORK_RETRY_ATTEMPTS,
-          delaysMs: NETWORK_RETRY_DELAYS_MS,
-        },
+        retry: networkRetryOptions(args.onRetry),
         body: {
           tool_name: args.item.tool_name,
           idempotency_key: deps.randomUUID(),
@@ -275,13 +278,14 @@ export async function runBatchItem(
     }
 
     if (args.defaults?.wait && !isTerminalJobStatus(job.status)) {
-      job = await deps.waitJobCommand({
+      job = await deps.waitJobCommand(withRetryHandler({
         jobId: job.id,
         baseUrl: args.credentials.baseUrl,
         token: args.credentials.token,
         timeoutSeconds: 60,
         configPath: undefined,
-      });
+        onRetry: args.onRetry,
+      }, args.onRetry));
 
       await updateState({
         status: toBatchStatus(job.status),
@@ -302,6 +306,7 @@ export async function runBatchItem(
           baseUrl: args.credentials.baseUrl,
           token: args.credentials.token,
           outputPath,
+          onRetry: args.onRetry,
         },
         outputFileId,
         deps,

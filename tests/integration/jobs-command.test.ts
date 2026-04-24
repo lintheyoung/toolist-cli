@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.resetModules();
   vi.doUnmock('../../src/commands/jobs/get.js');
   vi.doUnmock('../../src/commands/jobs/wait.js');
@@ -102,6 +103,11 @@ describe('tools list command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/v1/tools',
+      stage: 'List tools request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
     expect(result).toEqual({
       tools: [
@@ -158,6 +164,53 @@ describe('tools list command', () => {
       tools: [],
     });
     expect(result.stderr).toBe('');
+  });
+
+  it('retries transient tools list transport failures', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              tools: [
+                {
+                  name: 'image.convert_format',
+                  version: '2026-04-12',
+                  accepted_mime_types: ['image/jpeg'],
+                  max_file_size_bytes: 10_000_000,
+                },
+              ],
+            },
+            request_id: 'req_tools_retry',
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { createStderrRetryReporter } = await import('../../src/lib/retry.js');
+    const { listToolsCommand } = await import('../../src/commands/tools/list.js');
+    let stderr = '';
+
+    const result = await listToolsCommand({
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      onRetry: createStderrRetryReporter((chunk) => {
+        stderr += chunk;
+      }),
+    });
+
+    expect(result.tools).toHaveLength(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(stderr).toContain('List tools request failed: fetch failed\n');
+    expect(stderr).toContain('Retrying list tools request (1/4) in 1000ms...\n');
   });
 });
 
@@ -306,6 +359,11 @@ describe('jobs commands', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/v1/jobs/job_123',
+      stage: 'Get job request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
     expect(result).toEqual({
       id: 'job_123',
@@ -473,9 +531,10 @@ describe('jobs commands', () => {
         },
       ),
     ).rejects.toThrow('Job polling failed: fetch failed');
-    expect(getJob).toHaveBeenCalledTimes(3);
+    expect(getJob).toHaveBeenCalledTimes(4);
     expect(sleep).toHaveBeenCalledWith(1000);
     expect(sleep).toHaveBeenCalledWith(3000);
+    expect(sleep).toHaveBeenCalledWith(7000);
   });
 
   it('caps polling retry delay to the remaining timeout', async () => {

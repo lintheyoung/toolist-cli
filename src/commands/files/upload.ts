@@ -4,8 +4,8 @@ import { readFile, stat } from 'node:fs/promises';
 
 import { apiRequest } from '../../lib/http.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
+  type RetryHandler,
   withRetry,
 } from '../../lib/retry.js';
 
@@ -16,6 +16,7 @@ export interface UploadFileCommandArgs {
   configPath?: string;
   computeSha256?: boolean;
   public?: boolean;
+  onRetry?: RetryHandler;
 }
 
 export interface UploadFileCommandResult {
@@ -107,6 +108,7 @@ export async function uploadCommand(
   const sha256 = args.computeSha256
     ? createHash('sha256').update(fileBuffer).digest('hex')
     : undefined;
+  const retry = extendedNetworkRetryOptions(args.onRetry);
 
   const createUploadResponse = await deps.apiRequest<CreateUploadResponse>({
     baseUrl: args.baseUrl,
@@ -114,10 +116,7 @@ export async function uploadCommand(
     method: 'POST',
     path: '/api/v1/files/create-upload',
     stage: 'Create upload request failed',
-    retry: {
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
-    },
+    retry,
     body: {
       filename,
       mime_type: mimeType,
@@ -133,8 +132,9 @@ export async function uploadCommand(
 
   const uploadResponse = await withRetry({
     stage: 'Upload request failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    attempts: retry.attempts,
+    delaysMs: retry.delaysMs,
+    onRetry: args.onRetry,
     fn: async () => {
       const response = await deps.fetch(createUploadResponse.data.upload_url, {
         method: 'PUT',
@@ -160,10 +160,7 @@ export async function uploadCommand(
     method: 'POST',
     path: `/api/v1/files/${encodeURIComponent(createUploadResponse.data.file_id)}/complete`,
     stage: 'Complete upload request failed',
-    retry: {
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
-    },
+    retry,
     ...(sha256 ? { body: { sha256 } } : {}),
   });
 

@@ -1,5 +1,10 @@
 import { CliError } from './errors.js';
-import { withRetry, withStageContext, type RetryOptions } from './retry.js';
+import {
+  isRetryableTransportError,
+  withRetry,
+  withStageContext,
+  type RetryOptions,
+} from './retry.js';
 
 type ApiErrorEnvelope = {
   error?: {
@@ -40,6 +45,25 @@ function unexpectedError(status = 0): CliError {
     message: 'An unexpected error occurred.',
     status,
   });
+}
+
+class RetryableHttpResponseError extends Error {
+  constructor(readonly response: Response) {
+    const statusText = response.statusText.trim();
+    super(
+      statusText
+        ? `HTTP ${response.status} ${statusText}`
+        : `HTTP ${response.status}`,
+    );
+  }
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+  return status >= 500 && status <= 599;
+}
+
+function isRetryableApiRequestError(error: unknown): boolean {
+  return error instanceof RetryableHttpResponseError || isRetryableTransportError(error);
 }
 
 function toCliError(status: number, payload: unknown): CliError {
@@ -106,12 +130,19 @@ export async function apiRequest<T>(args: {
 
   let response: Response;
 
-  const fetchRequest = async () =>
-    fetch(buildUrl(args.baseUrl, args.path), {
+  const fetchRequest = async () => {
+    const result = await fetch(buildUrl(args.baseUrl, args.path), {
       method,
       headers,
       body,
     });
+
+    if (args.retry && isRetryableHttpStatus(result.status)) {
+      throw new RetryableHttpResponseError(result);
+    }
+
+    return result;
+  };
 
   try {
     if (args.stage && args.retry) {
@@ -119,6 +150,8 @@ export async function apiRequest<T>(args: {
         stage: args.stage,
         attempts: args.retry.attempts,
         delaysMs: args.retry.delaysMs,
+        onRetry: args.retry.onRetry,
+        shouldRetry: isRetryableApiRequestError,
         fn: fetchRequest,
       });
     } else if (args.stage) {

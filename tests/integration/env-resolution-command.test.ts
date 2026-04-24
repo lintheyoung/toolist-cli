@@ -136,6 +136,11 @@ describe('CLI environment resolution', () => {
         token: 'prod-token',
         method: 'GET',
         path: '/api/cli/me',
+        stage: 'Whoami request failed',
+        retry: {
+          attempts: 4,
+          delaysMs: [1000, 3000, 7000],
+        },
       });
 
       await logoutCommand({
@@ -236,6 +241,11 @@ describe('CLI environment resolution', () => {
         token: 'legacy-self-hosted-token',
         method: 'GET',
         path: '/api/cli/me',
+        stage: 'Whoami request failed',
+        retry: {
+          attempts: 4,
+          delaysMs: [1000, 3000, 7000],
+        },
       });
     } finally {
       await rm(configDir, { recursive: true, force: true });

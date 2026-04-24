@@ -1,4 +1,5 @@
 import { apiRequest } from '../../lib/http.js';
+import { extendedNetworkRetryOptions, type RetryHandler, type RetryOptions } from '../../lib/retry.js';
 
 export interface GetJobCommandArgs {
   jobId: string;
@@ -6,6 +7,8 @@ export interface GetJobCommandArgs {
   token: string;
   configPath?: string;
   stage?: string;
+  retry?: RetryOptions | false;
+  onRetry?: RetryHandler;
 }
 
 export interface JobDetails {
@@ -49,7 +52,10 @@ export async function getJobCommand(
     token: args.token,
     method: 'GET',
     path: `/api/v1/jobs/${encodeURIComponent(args.jobId)}`,
-    ...(args.stage ? { stage: args.stage } : {}),
+    stage: args.stage ?? 'Get job request failed',
+    ...(args.retry === false
+      ? {}
+      : { retry: args.retry ?? extendedNetworkRetryOptions(args.onRetry) }),
   });
 
   return response.data.job;

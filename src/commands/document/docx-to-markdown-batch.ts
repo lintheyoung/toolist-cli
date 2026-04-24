@@ -4,8 +4,10 @@ import { rm, writeFile } from 'node:fs/promises';
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
   withRetry,
 } from '../../lib/retry.js';
 import {
@@ -25,6 +27,7 @@ export interface DocumentDocxToMarkdownBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface DocumentDocxToMarkdownBatchJobOutput {
@@ -123,7 +126,7 @@ function buildDownloadUrl(baseUrl: string, fileId: string): string {
 }
 
 async function downloadOutputFile(
-  args: Pick<DocumentDocxToMarkdownBatchCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  args: Pick<DocumentDocxToMarkdownBatchCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
   dependencies: Pick<DocumentDocxToMarkdownBatchDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
@@ -133,8 +136,9 @@ async function downloadOutputFile(
 
   const response = await withRetry({
     stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
+    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+    onRetry: args.onRetry,
     fn: () =>
       dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
         headers: {
@@ -167,12 +171,13 @@ export async function documentDocxToMarkdownBatchCommand(
 
   try {
     deps.progress.uploadingInput();
-    const sourceFile = await deps.uploadCommand({
+    const sourceFile = await deps.uploadCommand(withRetryHandler({
       input: zipInput.zipPath,
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    });
+      onRetry: args.onRetry,
+    }, args.onRetry));
     deps.progress.uploadedFile(sourceFile.file_id);
 
     deps.progress.creatingJob();
@@ -182,10 +187,7 @@ export async function documentDocxToMarkdownBatchCommand(
       method: 'POST',
       path: '/api/v1/jobs',
       stage: 'Create job request failed',
-      retry: {
-        attempts: NETWORK_RETRY_ATTEMPTS,
-        delaysMs: NETWORK_RETRY_DELAYS_MS,
-      },
+      retry: networkRetryOptions(args.onRetry),
       body: {
         tool_name: 'document.docx_to_markdown_bundle_batch',
         idempotency_key: deps.randomUUID(),
@@ -208,16 +210,17 @@ export async function documentDocxToMarkdownBatchCommand(
 
     const job = isTerminalJobStatus(createdJob.status)
       ? createdJob
-      : await deps.waitJobCommand({
+      : await deps.waitJobCommand(withRetryHandler({
           jobId: createdJob.id,
           baseUrl: args.baseUrl,
           token: args.token,
           timeoutSeconds: args.timeoutSeconds ?? 60,
           configPath: args.configPath,
+          onRetry: args.onRetry,
           onStatus: (status) => {
             deps.progress.jobStatus(status);
           },
-        });
+        }, args.onRetry));
     deps.progress.jobStatus(job.status);
 
     assertJobSucceeded(job);
@@ -233,9 +236,10 @@ export async function documentDocxToMarkdownBatchCommand(
       await downloadOutputFile(
         {
           baseUrl: args.baseUrl,
-          token: args.token,
-          output: args.output,
-        },
+        token: args.token,
+        output: args.output,
+        onRetry: args.onRetry,
+      },
         outputFileId,
         deps,
       );

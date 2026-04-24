@@ -7,8 +7,10 @@ import { apiRequest } from '../../lib/http.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
 import { assertJobSucceeded, JobFailureError } from '../../lib/job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
   withRetry,
 } from '../../lib/retry.js';
 import {
@@ -38,6 +40,7 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ImageRemoveWatermarkBatchJobOutput {
@@ -239,15 +242,16 @@ function buildDownloadUrl(baseUrl: string, fileId: string): string {
 }
 
 async function downloadOutputFile(
-  args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token'>,
+  args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token' | 'onRetry'>,
   outputFileId: string,
   outputPath: string,
   dependencies: Pick<ImageRemoveWatermarkBatchDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
   const response = await withRetry({
     stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
+    attempts: extendedNetworkRetryOptions(args.onRetry).attempts,
+    delaysMs: extendedNetworkRetryOptions(args.onRetry).delaysMs,
+    onRetry: args.onRetry,
     fn: () =>
       dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
         headers: {
@@ -322,12 +326,13 @@ async function createChunkJob(
 
   try {
     dependencies.progress.uploadingInput();
-    const sourceFile = await dependencies.uploadCommand({
+    const sourceFile = await dependencies.uploadCommand(withRetryHandler({
       input: zipInput.zipPath,
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    });
+      onRetry: args.onRetry,
+    }, args.onRetry));
     dependencies.progress.uploadedFile(sourceFile.file_id);
 
     dependencies.progress.creatingJob();
@@ -337,10 +342,7 @@ async function createChunkJob(
       method: 'POST',
       path: '/api/v1/jobs',
       stage: 'Create job request failed',
-      retry: {
-        attempts: NETWORK_RETRY_ATTEMPTS,
-        delaysMs: NETWORK_RETRY_DELAYS_MS,
-      },
+      retry: networkRetryOptions(args.onRetry),
       body: {
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         idempotency_key: dependencies.randomUUID(),
@@ -369,16 +371,17 @@ async function waitForChunkJob(
 
   const job = isTerminalJobStatus(createdJob.status)
     ? createdJob
-    : await dependencies.waitJobCommand({
+    : await dependencies.waitJobCommand(withRetryHandler({
         jobId: createdJob.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
+        onRetry: args.onRetry,
         onStatus: (status) => {
           dependencies.progress.jobStatus(status);
         },
-      });
+      }, args.onRetry));
   dependencies.progress.jobStatus(job.status);
 
   try {
@@ -456,6 +459,7 @@ export async function imageRemoveWatermarkBatchCommand(
             {
               baseUrl: args.baseUrl,
               token: args.token,
+              onRetry: args.onRetry,
             },
             outputFileId,
             chunkOutputPath,
