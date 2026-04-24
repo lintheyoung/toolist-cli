@@ -4,13 +4,14 @@ import { basename, dirname, join } from 'node:path';
 
 import { uploadCommand } from '../commands/files/upload.js';
 import { waitJobCommand } from '../commands/jobs/wait.js';
+import { fetchFileDownloadResponse } from './download.js';
 import { apiRequest } from './http.js';
 import { isCliError } from './errors.js';
 import { assertJobSucceeded } from './job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
-  withRetry,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
 } from './retry.js';
 import type { BatchManifest } from './batch-manifest.js';
 import { saveBatchState, type BatchItemState, type BatchState } from './batch-state.js';
@@ -104,10 +105,6 @@ function getOutputFilename(job: CreateJobResponse['data']['job'], fallbackName: 
   return outputFileId ?? fallbackName;
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 function formatError(error: unknown): BatchItemExecutionResult['error'] {
   if (isCliError(error)) {
     return {
@@ -132,23 +129,19 @@ async function downloadOutputFile(
     baseUrl: string;
     token: string;
     outputPath: string;
+    onRetry?: RetryHandler;
   },
   outputFileId: string,
   dependencies: Pick<BatchItemRunnerDependencies, 'fetch' | 'writeFile' | 'mkdir'>,
 ): Promise<void> {
   await dependencies.mkdir(dirname(args.outputPath), { recursive: true });
 
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
+    onRetry: args.onRetry,
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download output file ${outputFileId}.`);
@@ -168,6 +161,7 @@ export async function runBatchItem(
     };
     state: BatchState;
     statePath: string;
+    onRetry?: RetryHandler;
   },
   dependencies: Partial<BatchItemRunnerDependencies> = {},
 ): Promise<BatchItemExecutionResult> {
@@ -224,12 +218,13 @@ export async function runBatchItem(
         : args.item.input_file_id ?? stateItem.uploaded_file_id ?? null;
 
     if (!resumableJobId && !sourceFileId && args.item.input_path) {
-      const uploadedFile = await deps.uploadCommand({
+      const uploadedFile = await deps.uploadCommand(withRetryHandler({
         input: args.item.input_path,
         baseUrl: args.credentials.baseUrl,
         token: args.credentials.token,
         configPath: undefined,
-      });
+        onRetry: args.onRetry,
+      }, args.onRetry));
 
       sourceFileId = uploadedFile.file_id;
       await updateState({ uploaded_file_id: uploadedFile.file_id });
@@ -253,10 +248,7 @@ export async function runBatchItem(
         method: 'POST',
         path: '/api/v1/jobs',
         stage: 'Create job request failed',
-        retry: {
-          attempts: NETWORK_RETRY_ATTEMPTS,
-          delaysMs: NETWORK_RETRY_DELAYS_MS,
-        },
+        retry: networkRetryOptions(args.onRetry),
         body: {
           tool_name: args.item.tool_name,
           idempotency_key: deps.randomUUID(),
@@ -275,13 +267,14 @@ export async function runBatchItem(
     }
 
     if (args.defaults?.wait && !isTerminalJobStatus(job.status)) {
-      job = await deps.waitJobCommand({
+      job = await deps.waitJobCommand(withRetryHandler({
         jobId: job.id,
         baseUrl: args.credentials.baseUrl,
         token: args.credentials.token,
         timeoutSeconds: 60,
         configPath: undefined,
-      });
+        onRetry: args.onRetry,
+      }, args.onRetry));
 
       await updateState({
         status: toBatchStatus(job.status),
@@ -302,6 +295,7 @@ export async function runBatchItem(
           baseUrl: args.credentials.baseUrl,
           token: args.credentials.token,
           outputPath,
+          onRetry: args.onRetry,
         },
         outputFileId,
         deps,

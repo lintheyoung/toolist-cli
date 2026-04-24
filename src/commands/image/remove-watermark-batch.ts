@@ -3,13 +3,14 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
 import { assertJobSucceeded, JobFailureError } from '../../lib/job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
-  withRetry,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
 } from '../../lib/retry.js';
 import {
   silentProgressReporter,
@@ -38,6 +39,7 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ImageRemoveWatermarkBatchJobOutput {
@@ -234,27 +236,18 @@ function getBatchCount(job: ImageRemoveWatermarkBatchJobResult, key: 'processedF
   );
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
-  args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token'>,
+  args: Pick<ImageRemoveWatermarkBatchCommandArgs, 'baseUrl' | 'token' | 'onRetry'>,
   outputFileId: string,
   outputPath: string,
   dependencies: Pick<ImageRemoveWatermarkBatchDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
+    onRetry: args.onRetry,
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download watermark batch output file ${outputFileId}.`);
@@ -322,12 +315,13 @@ async function createChunkJob(
 
   try {
     dependencies.progress.uploadingInput();
-    const sourceFile = await dependencies.uploadCommand({
+    const sourceFile = await dependencies.uploadCommand(withRetryHandler({
       input: zipInput.zipPath,
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    });
+      onRetry: args.onRetry,
+    }, args.onRetry));
     dependencies.progress.uploadedFile(sourceFile.file_id);
 
     dependencies.progress.creatingJob();
@@ -337,10 +331,7 @@ async function createChunkJob(
       method: 'POST',
       path: '/api/v1/jobs',
       stage: 'Create job request failed',
-      retry: {
-        attempts: NETWORK_RETRY_ATTEMPTS,
-        delaysMs: NETWORK_RETRY_DELAYS_MS,
-      },
+      retry: networkRetryOptions(args.onRetry),
       body: {
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         idempotency_key: dependencies.randomUUID(),
@@ -369,16 +360,17 @@ async function waitForChunkJob(
 
   const job = isTerminalJobStatus(createdJob.status)
     ? createdJob
-    : await dependencies.waitJobCommand({
+    : await dependencies.waitJobCommand(withRetryHandler({
         jobId: createdJob.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
+        onRetry: args.onRetry,
         onStatus: (status) => {
           dependencies.progress.jobStatus(status);
         },
-      });
+      }, args.onRetry));
   dependencies.progress.jobStatus(job.status);
 
   try {
@@ -456,6 +448,7 @@ export async function imageRemoveWatermarkBatchCommand(
             {
               baseUrl: args.baseUrl,
               token: args.token,
+              onRetry: args.onRetry,
             },
             outputFileId,
             chunkOutputPath,

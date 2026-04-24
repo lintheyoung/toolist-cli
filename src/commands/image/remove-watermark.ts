@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
 import { assertJobSucceeded } from '../../lib/job-errors.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
-  withRetry,
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
 } from '../../lib/retry.js';
 import {
   silentProgressReporter,
@@ -23,6 +24,7 @@ export interface ImageRemoveWatermarkCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ImageRemoveWatermarkJobOutput {
@@ -99,12 +101,8 @@ function createDefaultDependencies(): ImageRemoveWatermarkDependencies {
   };
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
-  args: Pick<ImageRemoveWatermarkCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  args: Pick<ImageRemoveWatermarkCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
   dependencies: Pick<ImageRemoveWatermarkDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
@@ -112,17 +110,12 @@ async function downloadOutputFile(
     return;
   }
 
-  const response = await withRetry({
-    stage: 'Output download failed',
-    attempts: NETWORK_RETRY_ATTEMPTS,
-    delaysMs: NETWORK_RETRY_DELAYS_MS,
-    fn: () =>
-      dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-        headers: {
-          authorization: `Bearer ${args.token}`,
-        },
-      }),
-  });
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
+    onRetry: args.onRetry,
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download watermark-removed file ${outputFileId}.`);
@@ -142,12 +135,13 @@ export async function imageRemoveWatermarkCommand(
   };
 
   deps.progress.uploadingInput();
-  const sourceFile = await deps.uploadCommand({
+  const sourceFile = await deps.uploadCommand(withRetryHandler({
     input: args.input,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
-  });
+    onRetry: args.onRetry,
+  }, args.onRetry));
   deps.progress.uploadedFile(sourceFile.file_id);
 
   deps.progress.creatingJob();
@@ -157,10 +151,7 @@ export async function imageRemoveWatermarkCommand(
     method: 'POST',
     path: '/api/v1/jobs',
     stage: 'Create job request failed',
-    retry: {
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
-    },
+    retry: networkRetryOptions(args.onRetry),
     body: {
       tool_name: 'image.gemini_nb_remove_watermark',
       idempotency_key: deps.randomUUID(),
@@ -183,16 +174,17 @@ export async function imageRemoveWatermarkCommand(
 
   const job = isTerminalJobStatus(createdJob.status)
     ? createdJob
-    : await deps.waitJobCommand({
+    : await deps.waitJobCommand(withRetryHandler({
         jobId: createdJob.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
+        onRetry: args.onRetry,
         onStatus: (status) => {
           deps.progress.jobStatus(status);
         },
-      });
+      }, args.onRetry));
   deps.progress.jobStatus(job.status);
 
   assertJobSucceeded(job);
@@ -210,6 +202,7 @@ export async function imageRemoveWatermarkCommand(
         baseUrl: args.baseUrl,
         token: args.token,
         output: args.output,
+        onRetry: args.onRetry,
       },
       outputFileId,
       deps,

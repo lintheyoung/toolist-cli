@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.resetModules();
   vi.doUnmock('../../src/commands/whoami.js');
@@ -109,6 +110,11 @@ describe('whoami command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',
+      stage: 'Whoami request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
     expect(result).toEqual({
       user: {
@@ -170,6 +176,11 @@ describe('whoami command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',
+      stage: 'Whoami request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
   });
 
@@ -219,6 +230,11 @@ describe('whoami command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',
+      stage: 'Whoami request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
   });
 
@@ -269,6 +285,75 @@ describe('whoami command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/cli/me',
+      stage: 'Whoami request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
+  });
+
+  it('retries transient whoami transport failures and keeps JSON output clean', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              user: {
+                id: 11,
+                email: 'agent@example.com',
+              },
+              workspace: {
+                id: 77,
+                name: 'Acme',
+              },
+              scopes: ['workspace:read'],
+              active_job_count: 0,
+              max_concurrent_jobs: 5,
+            },
+            request_id: 'req_whoami_retry',
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { createStderrRetryReporter } = await import('../../src/lib/retry.js');
+    const { whoamiCommand } = await import('../../src/commands/whoami.js');
+
+    let stderr = '';
+    const result = await whoamiCommand(
+      {
+        configPath: '/tmp/toollist-config.json',
+        env: 'dev',
+        onRetry: createStderrRetryReporter((chunk) => {
+          stderr += chunk;
+        }),
+      },
+      {
+        loadConfig: vi.fn(async () => ({
+          activeEnvironment: 'dev' as const,
+          profiles: {
+            dev: {
+              environment: 'dev' as const,
+              baseUrl: 'http://localhost:3024',
+              accessToken: 'tgc_cli_secret',
+            },
+          },
+        })),
+      },
+    );
+
+    expect(result.user.id).toBe(11);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(stderr).toContain('Whoami request failed: fetch failed\n');
+    expect(stderr).toContain('Retrying whoami request (1/4) in 1000ms...\n');
   });
 });

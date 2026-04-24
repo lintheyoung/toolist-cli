@@ -1,7 +1,6 @@
 import { getJobCommand, type GetJobCommandArgs, type GetJobCommandResult } from './get.js';
 import {
-  NETWORK_RETRY_ATTEMPTS,
-  NETWORK_RETRY_DELAYS_MS,
+  extendedNetworkRetryOptions,
   withRetry,
 } from '../../lib/retry.js';
 import { isCliError } from '../../lib/errors.js';
@@ -47,6 +46,18 @@ function isTimeoutError(error: unknown, jobId: string, timeoutSeconds: number): 
   );
 }
 
+function isRetryablePollingError(error: unknown, jobId: string, timeoutSeconds: number): boolean {
+  if (isTimeoutError(error, jobId, timeoutSeconds)) {
+    return false;
+  }
+
+  if (isCliError(error)) {
+    return error.status >= 500;
+  }
+
+  return true;
+}
+
 export async function waitJobCommand(
   args: WaitJobCommandArgs,
   dependencies: Partial<WaitJobDependencies> = {},
@@ -59,6 +70,7 @@ export async function waitJobCommand(
   const startedAt = deps.now();
   const timeoutMs = args.timeoutSeconds * 1000;
   const deadline = startedAt + timeoutMs;
+  const retry = extendedNetworkRetryOptions(args.onRetry);
   let lastStatus: string | undefined;
 
   while (true) {
@@ -70,8 +82,9 @@ export async function waitJobCommand(
 
     const job = await withRetry({
       stage: 'Job polling failed',
-      attempts: NETWORK_RETRY_ATTEMPTS,
-      delaysMs: NETWORK_RETRY_DELAYS_MS,
+      attempts: retry.attempts,
+      delaysMs: retry.delaysMs,
+      onRetry: retry.onRetry,
       sleep: async (ms) => {
         const remainingMs = deadline - deps.now();
 
@@ -81,8 +94,7 @@ export async function waitJobCommand(
 
         await deps.sleep(Math.min(ms, remainingMs));
       },
-      shouldRetry: (error) =>
-        !isCliError(error) && !isTimeoutError(error, args.jobId, args.timeoutSeconds),
+      shouldRetry: (error) => isRetryablePollingError(error, args.jobId, args.timeoutSeconds),
       fn: () => {
         if (deps.now() >= deadline) {
           throw createTimeoutError(args.jobId, args.timeoutSeconds);
@@ -94,6 +106,7 @@ export async function waitJobCommand(
           token: args.token,
           configPath: args.configPath,
           stage: 'Job polling failed',
+          retry: false,
         });
       },
     });

@@ -27,6 +27,7 @@ import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
 import { createStderrProgressReporter } from './lib/progress-reporter.js';
+import { createStderrRetryReporter, withRetryHandler } from './lib/retry.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -2774,6 +2775,9 @@ async function resolveApiCredentials(args: {
 }
 
 export async function main(argv: string[] = process.argv.slice(2), io: CliIO = defaultIO): Promise<number> {
+  const onRetry = createStderrRetryReporter(io.stderr);
+  const retryArgs = <T extends object>(args: T): T & { onRetry?: typeof onRetry } =>
+    withRetryHandler(args, onRetry);
   const [command, ...rest] = argv;
 
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -2820,10 +2824,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   if (command === 'whoami') {
     try {
       const whoamiArgs = parseConfigPathArgs(rest);
-      const result = await whoamiCommand({
+      const result = await whoamiCommand(retryArgs({
         configPath: whoamiArgs.configPath,
         env: whoamiArgs.env,
-      });
+        onRetry,
+      }));
       io.stdout(`${JSON.stringify(result)}\n`);
       return 0;
     } catch (error) {
@@ -2872,14 +2877,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await runBatchCommand({
+        const result = await runBatchCommand(retryArgs({
           manifestPath: parsed.manifestPath,
           resume: parsed.resume ?? false,
           concurrency: parsed.concurrency,
           outputDir: parsed.outputDir,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -2901,10 +2907,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       try {
         const parsed = parseApiArgs(commandArgs, true);
         const credentials = await resolveApiCredentials(parsed);
-        const result = await listToolsCommand({
+        const result = await listToolsCommand(retryArgs({
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -2932,13 +2939,14 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await uploadCommand({
+        const result = await uploadCommand(retryArgs({
           input: parsed.input,
           ...credentials,
           configPath: parsed.configPath,
           computeSha256: parsed.computeSha256 ?? false,
           ...(parsed.public ? { public: true } : {}),
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3011,7 +3019,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await markdownUploadImagesCommand({
+        const result = await markdownUploadImagesCommand(retryArgs({
           input: parsed.input,
           root: parsed.root,
           glob: parsed.glob,
@@ -3023,7 +3031,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           skipMissing: parsed.skipMissing,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         const jsonOutput = `${JSON.stringify(result)}\n`;
 
         if (parsed.reportPath) {
@@ -3068,14 +3077,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await documentDocxToMarkdownCommand({
+        const result = await documentDocxToMarkdownCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        }, {
+          onRetry,
+        }), {
           progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
@@ -3096,7 +3106,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await documentDocxToMarkdownBatchCommand({
+        const result = await documentDocxToMarkdownBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           wait: parsed.wait,
@@ -3104,7 +3114,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        }, {
+          onRetry,
+        }), {
           progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
@@ -3164,7 +3175,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageConvertCommand({
+        const result = await imageConvertCommand(retryArgs({
           input: parsed.input,
           to: parsed.to,
           quality: parsed.quality,
@@ -3174,7 +3185,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3193,14 +3205,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveWatermarkCommand({
+        const result = await imageRemoveWatermarkCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        }, {
+          onRetry,
+        }), {
           progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
@@ -3221,14 +3234,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveBackgroundCommand({
+        const result = await imageRemoveBackgroundCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3247,7 +3261,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveWatermarkBatchCommand({
+        const result = await imageRemoveWatermarkBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           chunkSize: parsed.chunkSize,
@@ -3257,7 +3271,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
-        }, {
+          onRetry,
+        }), {
           progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
@@ -3278,7 +3293,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageConvertBatchCommand({
+        const result = await imageConvertBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           to: parsed.to,
@@ -3290,7 +3305,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3324,7 +3340,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageCropBatchCommand({
+        const result = await imageCropBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           x: parsed.x,
@@ -3340,7 +3356,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3364,7 +3381,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageResizeCommand({
+        const result = await imageResizeCommand(retryArgs({
           input: parsed.input,
           width: parsed.width,
           height: parsed.height,
@@ -3376,7 +3393,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3395,11 +3413,12 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageResizeBatchCommand({
+        const result = await imageResizeBatchCommand(retryArgs({
           ...parsed,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3438,7 +3457,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageCropCommand({
+        const result = await imageCropCommand(retryArgs({
           input: parsed.input,
           x: parsed.x,
           y: parsed.y,
@@ -3452,7 +3471,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3480,11 +3500,12 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await getJobCommand({
+        const result = await getJobCommand(retryArgs({
           jobId: parsed.jobId,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3503,12 +3524,13 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await waitJobCommand({
+        const result = await waitJobCommand(retryArgs({
           jobId: parsed.jobId,
           timeoutSeconds: parsed.timeoutSeconds ?? 60,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {

@@ -4,6 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { glob } from 'glob';
 
 import { uploadCommand } from '../files/upload.js';
+import { withRetryHandler, type RetryHandler } from '../../lib/retry.js';
 
 export interface MarkdownUploadImagesCommandArgs {
   input?: string;
@@ -18,6 +19,7 @@ export interface MarkdownUploadImagesCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface MarkdownUploadImagesReplacement {
@@ -478,7 +480,7 @@ function assertOutputDoesNotOverwriteSource(outputPath: string, sourcePath: stri
 
 async function uploadImage(
   reference: LocalImageReference,
-  args: Pick<MarkdownUploadImagesCommandArgs, 'baseUrl' | 'token' | 'configPath'>,
+  args: Pick<MarkdownUploadImagesCommandArgs, 'baseUrl' | 'token' | 'configPath' | 'onRetry'>,
   deps: Pick<MarkdownUploadImagesDependencies, 'uploadCommand'>,
   cache: Map<string, UploadedImage>,
 ): Promise<{ image: UploadedImage; uploaded: boolean }> {
@@ -488,13 +490,14 @@ async function uploadImage(
     return { image: cached, uploaded: false };
   }
 
-  const result = await deps.uploadCommand({
+  const result = await deps.uploadCommand(withRetryHandler({
     input: reference.absolutePath,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
     public: true,
-  });
+    onRetry: args.onRetry,
+  }, args.onRetry));
 
   if (!result.public_url) {
     throw new Error(`Upload did not return a public URL for ${reference.from}.`);
