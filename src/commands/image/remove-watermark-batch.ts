@@ -32,6 +32,7 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   inputs?: string[];
   inputGlob?: string;
   chunkSize?: number;
+  tuning?: ImageRemoveWatermarkBatchTuningInput;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -40,6 +41,20 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   token: string;
   configPath?: string;
   onRetry?: RetryHandler;
+}
+
+export interface ImageRemoveWatermarkBatchTuningInput {
+  threshold?: number;
+  region?: string;
+  fallback_region?: string;
+  snap?: boolean;
+  snap_max_size?: number;
+  snap_threshold?: number;
+  denoise?: 'ai' | 'ns' | 'telea' | 'soft' | 'off';
+  sigma?: number;
+  strength?: number;
+  radius?: number;
+  force?: boolean;
 }
 
 export interface ImageRemoveWatermarkBatchJobOutput {
@@ -325,6 +340,10 @@ async function createChunkJob(
     dependencies.progress.uploadedFile(sourceFile.file_id);
 
     dependencies.progress.creatingJob();
+    const input = {
+      input_file_id: sourceFile.file_id,
+      ...(args.tuning ?? {}),
+    };
     const createJobResponse = await dependencies.apiRequest<CreateJobResponse>({
       baseUrl: args.baseUrl,
       token: args.token,
@@ -335,9 +354,7 @@ async function createChunkJob(
       body: {
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         idempotency_key: dependencies.randomUUID(),
-        input: {
-          input_file_id: sourceFile.file_id,
-        },
+        input,
       },
     });
     const createdJob = createJobResponse.data.job;

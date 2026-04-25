@@ -129,7 +129,274 @@ describe('image remove-watermark-batch command', () => {
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--chunk-size <n>');
+    expect(result.stdout).toContain('--threshold <0..1>');
+    expect(result.stdout).toContain('--region <region>');
+    expect(result.stdout).toContain('--fallback-region <region>');
+    expect(result.stdout).toContain('--snap');
+    expect(result.stdout).toContain('--no-snap');
+    expect(result.stdout).toContain('--snap-max-size <32..320>');
+    expect(result.stdout).toContain('--snap-threshold <0..1>');
+    expect(result.stdout).toContain('--denoise <ai|ns|telea|soft|off>');
+    expect(result.stdout).toContain('--sigma <1..150>');
+    expect(result.stdout).toContain('--strength <0..300>');
+    expect(result.stdout).toContain('--radius <1..25>');
+    expect(result.stdout).toContain('--force');
+    expect(result.stdout).toContain('Only use --force when every image should be processed');
     expect(result.stdout).toContain('--output <path>');
+  });
+
+  it('keeps the create job input unchanged when tuning flags are omitted', async () => {
+    const { tempDir, inputs } = await createInputFiles(1);
+    const createJobInputs: unknown[] = [];
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_batch_source_1',
+      filename: 'inputs.zip',
+      mime_type: 'application/zip',
+      size_bytes: 512,
+    }));
+
+    const apiRequest = vi.fn(async ({ body }: { body: { input: unknown } }) => {
+      createJobInputs.push(body.input);
+
+      return {
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      };
+    });
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark-batch',
+      '--inputs',
+      ...inputs,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(createJobInputs).toEqual([
+      {
+        input_file_id: 'file_batch_source_1',
+      },
+    ]);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('passes tuning fields to every chunk job input', async () => {
+    const { tempDir, inputs } = await createInputFiles(6);
+    const createJobInputs: unknown[] = [];
+    let uploadCount = 0;
+
+    const uploadCommand = vi.fn(async () => {
+      uploadCount += 1;
+
+      return {
+        file_id: `file_batch_source_${uploadCount}`,
+        filename: 'inputs.zip',
+        mime_type: 'application/zip',
+        size_bytes: 512,
+      };
+    });
+
+    const apiRequest = vi.fn(async ({ body }: { body: { input: unknown } }) => {
+      createJobInputs.push(body.input);
+      const chunkIndex = createJobInputs.length;
+
+      return {
+        data: {
+          job: {
+            id: `job_chunk_${chunkIndex}`,
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: `req_create_job_chunk_${chunkIndex}`,
+      };
+    });
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark-batch',
+      '--inputs',
+      ...inputs,
+      '--chunk-size',
+      '3',
+      '--threshold',
+      '0.42',
+      '--region',
+      'br:0,0,160,160',
+      '--fallback-region',
+      '10,20,30,40',
+      '--no-snap',
+      '--snap-max-size',
+      '160',
+      '--snap-threshold',
+      '0.65',
+      '--denoise',
+      'ai',
+      '--sigma',
+      '50',
+      '--strength',
+      '300',
+      '--radius',
+      '12',
+      '--force',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(createJobInputs).toEqual([
+      {
+        input_file_id: 'file_batch_source_1',
+        threshold: 0.42,
+        region: 'br:0,0,160,160',
+        fallback_region: '10,20,30,40',
+        snap: false,
+        snap_max_size: 160,
+        snap_threshold: 0.65,
+        denoise: 'ai',
+        sigma: 50,
+        strength: 300,
+        radius: 12,
+        force: true,
+      },
+      {
+        input_file_id: 'file_batch_source_2',
+        threshold: 0.42,
+        region: 'br:0,0,160,160',
+        fallback_region: '10,20,30,40',
+        snap: false,
+        snap_max_size: 160,
+        snap_threshold: 0.65,
+        denoise: 'ai',
+        sigma: 50,
+        strength: 300,
+        radius: 12,
+        force: true,
+      },
+    ]);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('uses the last snap flag when both --snap and --no-snap are present', async () => {
+    const { tempDir, inputs } = await createInputFiles(1);
+    const createJobInputs: Array<{ snap?: boolean }> = [];
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_batch_source_1',
+      filename: 'inputs.zip',
+      mime_type: 'application/zip',
+      size_bytes: 512,
+    }));
+
+    const apiRequest = vi.fn(async ({ body }: { body: { input: { snap?: boolean } } }) => {
+      createJobInputs.push(body.input);
+
+      return {
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      };
+    });
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark-batch',
+      '--inputs',
+      ...inputs,
+      '--snap',
+      '--no-snap',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(createJobInputs).toEqual([
+      {
+        input_file_id: 'file_batch_source_1',
+        snap: false,
+      },
+    ]);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('fails clearly for invalid tuning flag values', async () => {
+    const cases: Array<{ args: string[]; message: string }> = [
+      { args: ['--denoise', 'fast'], message: 'Invalid value for --denoise. Expected one of: ai, ns, telea, soft, off.' },
+      { args: ['--threshold', '1.5'], message: 'Invalid value for --threshold. Expected a number from 0 to 1.' },
+      { args: ['--snap-max-size', '31'], message: 'Invalid value for --snap-max-size. Expected an integer from 32 to 320.' },
+      { args: ['--snap-threshold', '-0.1'], message: 'Invalid value for --snap-threshold. Expected a number from 0 to 1.' },
+      { args: ['--sigma', '151'], message: 'Invalid value for --sigma. Expected a number from 1 to 150.' },
+      { args: ['--strength', '301'], message: 'Invalid value for --strength. Expected a number from 0 to 300.' },
+      { args: ['--radius', '26'], message: 'Invalid value for --radius. Expected an integer from 1 to 25.' },
+    ];
+
+    for (const testCase of cases) {
+      const result = await runCli([
+        'image',
+        'remove-watermark-batch',
+        '--inputs',
+        './a.png',
+        ...testCase.args,
+        '--base-url',
+        'https://api.example.com',
+        '--token',
+        'tgc_cli_secret',
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain(testCase.message);
+    }
   });
 
   it('splits 30 inputs into 6 default chunk jobs, merges outputs, and prints a batch summary', async () => {

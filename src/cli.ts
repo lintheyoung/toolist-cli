@@ -12,7 +12,10 @@ import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
 import { imageRemoveBackgroundCommand } from './commands/image/remove-background.js';
 import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
-import { imageRemoveWatermarkBatchCommand } from './commands/image/remove-watermark-batch.js';
+import {
+  imageRemoveWatermarkBatchCommand,
+  type ImageRemoveWatermarkBatchTuningInput,
+} from './commands/image/remove-watermark-batch.js';
 import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
@@ -103,6 +106,84 @@ function isIntegerInRange(value: number, minimum: number, maximum?: number): boo
   }
 
   return true;
+}
+
+function isNumberInRange(value: number, minimum: number, maximum: number): boolean {
+  return Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function getRequiredOptionValue(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  options: { allowNumericDashValue?: boolean } = {},
+): { value: string; consumeNext: boolean } {
+  if (rawValue !== undefined) {
+    return { value: rawValue, consumeNext: false };
+  }
+
+  const nextArg = args[index + 1];
+  if (
+    options.allowNumericDashValue &&
+    nextArg !== undefined &&
+    Number.isFinite(Number(nextArg))
+  ) {
+    return { value: nextArg, consumeNext: true };
+  }
+
+  missingOptionValue(flag);
+}
+
+function parseNumberRangeOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  minimum: number,
+  maximum: number,
+): { value: number; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index, {
+    allowNumericDashValue: true,
+  });
+  const numberValue = Number(optionValue.value);
+
+  if (!isNumberInRange(numberValue, minimum, maximum)) {
+    throw new Error(`Invalid value for ${flag}. Expected a number from ${minimum} to ${maximum}.`);
+  }
+
+  return {
+    value: numberValue,
+    consumeNext: optionValue.consumeNext,
+  };
+}
+
+function parseIntegerRangeOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  minimum: number,
+  maximum: number,
+): { value: number; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index, {
+    allowNumericDashValue: true,
+  });
+  const numberValue = Number(optionValue.value);
+
+  if (!isIntegerInRange(numberValue, minimum, maximum)) {
+    throw new Error(`Invalid value for ${flag}. Expected an integer from ${minimum} to ${maximum}.`);
+  }
+
+  return {
+    value: numberValue,
+    consumeNext: optionValue.consumeNext,
+  };
+}
+
+function getTuning(parsed: { tuning?: ImageRemoveWatermarkBatchTuningInput }): ImageRemoveWatermarkBatchTuningInput {
+  parsed.tuning ??= {};
+  return parsed.tuning;
 }
 
 export function getRootHelp(): string {
@@ -385,12 +466,24 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--threshold <0..1>] [--region <region>] [--fallback-region <region>] [--snap | --no-snap] [--snap-max-size <32..320>] [--snap-threshold <0..1>] [--denoise <ai|ns|telea|soft|off>] [--sigma <1..150>] [--strength <0..300>] [--radius <1..25>] [--force] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
     '  --input-glob   Glob pattern for input files',
     '  --chunk-size   Input files per hosted job, maximum 5 (defaults to 5)',
+    '  --threshold <0..1>        Watermark detection threshold',
+    '  --region <region>         Detection region, for example br:0,0,160,160 or x,y,w,h',
+    '  --fallback-region <region> Fallback detection region',
+    '  --snap                    Enable region snapping',
+    '  --no-snap                 Disable region snapping',
+    '  --snap-max-size <32..320> Maximum snap search size in pixels',
+    '  --snap-threshold <0..1>   Snap detection threshold',
+    '  --denoise <ai|ns|telea|soft|off> Denoise mode',
+    '  --sigma <1..150>          Denoise sigma',
+    '  --strength <0..300>       Processing strength',
+    '  --radius <1..25>          Processing radius',
+    '  --force                   Only use --force when every image should be processed',
     '  --wait         Wait for the batch job to finish',
     '  --timeout      Maximum wait time in seconds',
     '  --output       Download results.zip to a local path',
@@ -1265,6 +1358,7 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
   inputs?: string[];
   inputGlob?: string;
   chunkSize?: number;
+  tuning?: ImageRemoveWatermarkBatchTuningInput;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -1277,6 +1371,7 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     inputs?: string[];
     inputGlob?: string;
     chunkSize?: number;
+    tuning?: ImageRemoveWatermarkBatchTuningInput;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -1397,6 +1492,162 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
       if (consumeNext) {
         index += 1;
       }
+      continue;
+    }
+
+    if (flag === '--threshold') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
+      getTuning(parsed).threshold = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--region') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
+      if (!parsedValue.value) {
+        missingOptionValue(flag);
+      }
+      getTuning(parsed).region = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--fallback-region') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
+      if (!parsedValue.value) {
+        missingOptionValue(flag);
+      }
+      getTuning(parsed).fallback_region = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--snap') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      getTuning(parsed).snap = true;
+      continue;
+    }
+
+    if (flag === '--no-snap') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      getTuning(parsed).snap = false;
+      continue;
+    }
+
+    if (flag === '--snap-max-size') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 32, 320);
+      getTuning(parsed).snap_max_size = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--snap-threshold') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
+      getTuning(parsed).snap_threshold = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--denoise') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
+      const allowedDenoise = ['ai', 'ns', 'telea', 'soft', 'off'] as const;
+
+      if (!allowedDenoise.includes(parsedValue.value as (typeof allowedDenoise)[number])) {
+        throw new Error('Invalid value for --denoise. Expected one of: ai, ns, telea, soft, off.');
+      }
+
+      getTuning(parsed).denoise = parsedValue.value as (typeof allowedDenoise)[number];
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--sigma') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 1, 150);
+      getTuning(parsed).sigma = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--strength') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 300);
+      getTuning(parsed).strength = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--radius') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 1, 25);
+      getTuning(parsed).radius = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--force') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      getTuning(parsed).force = true;
       continue;
     }
 
@@ -3265,6 +3516,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           chunkSize: parsed.chunkSize,
+          tuning: parsed.tuning,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
