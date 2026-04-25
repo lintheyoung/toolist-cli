@@ -32,6 +32,7 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   inputs?: string[];
   inputGlob?: string;
   chunkSize?: number;
+  tuning?: ImageRemoveWatermarkBatchTuningInput;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -40,6 +41,40 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   token: string;
   configPath?: string;
   onRetry?: RetryHandler;
+}
+
+export interface ImageRemoveWatermarkBatchTuningInput {
+  threshold?: number;
+  region?: string;
+  fallbackRegion?: string;
+  snap?: boolean;
+  snapMaxSize?: number;
+  snapThreshold?: number;
+  denoise?: 'ai' | 'ns' | 'telea' | 'soft' | 'off';
+  sigma?: number;
+  strength?: number;
+  radius?: number;
+  force?: boolean;
+}
+
+function buildHostedTuningInput(tuning: ImageRemoveWatermarkBatchTuningInput | undefined): Record<string, unknown> {
+  if (!tuning) {
+    return {};
+  }
+
+  return {
+    ...(tuning.threshold !== undefined ? { threshold: tuning.threshold } : {}),
+    ...(tuning.region !== undefined ? { region: tuning.region } : {}),
+    ...(tuning.fallbackRegion !== undefined ? { fallback_region: tuning.fallbackRegion } : {}),
+    ...(tuning.snap !== undefined ? { snap: tuning.snap } : {}),
+    ...(tuning.snapMaxSize !== undefined ? { snap_max_size: tuning.snapMaxSize } : {}),
+    ...(tuning.snapThreshold !== undefined ? { snap_threshold: tuning.snapThreshold } : {}),
+    ...(tuning.denoise !== undefined ? { denoise: tuning.denoise } : {}),
+    ...(tuning.sigma !== undefined ? { sigma: tuning.sigma } : {}),
+    ...(tuning.strength !== undefined ? { strength: tuning.strength } : {}),
+    ...(tuning.radius !== undefined ? { radius: tuning.radius } : {}),
+    ...(tuning.force !== undefined ? { force: tuning.force } : {}),
+  };
 }
 
 export interface ImageRemoveWatermarkBatchJobOutput {
@@ -325,6 +360,10 @@ async function createChunkJob(
     dependencies.progress.uploadedFile(sourceFile.file_id);
 
     dependencies.progress.creatingJob();
+    const input = {
+      input_file_id: sourceFile.file_id,
+      ...buildHostedTuningInput(args.tuning),
+    };
     const createJobResponse = await dependencies.apiRequest<CreateJobResponse>({
       baseUrl: args.baseUrl,
       token: args.token,
@@ -335,9 +374,7 @@ async function createChunkJob(
       body: {
         tool_name: 'image.gemini_nb_remove_watermark_batch',
         idempotency_key: dependencies.randomUUID(),
-        input: {
-          input_file_id: sourceFile.file_id,
-        },
+        input,
       },
     });
     const createdJob = createJobResponse.data.job;
