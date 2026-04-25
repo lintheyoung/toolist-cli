@@ -373,6 +373,8 @@ describe('image remove-watermark-batch command', () => {
     const cases: Array<{ args: string[]; message: string }> = [
       { args: ['--denoise', 'fast'], message: 'Invalid value for --denoise. Expected one of: ai, ns, telea, soft, off.' },
       { args: ['--threshold', '1.5'], message: 'Invalid value for --threshold. Expected a number from 0 to 1.' },
+      { args: ['--region', '   '], message: 'Invalid value for --region. Expected a non-empty region.' },
+      { args: ['--fallback-region', '   '], message: 'Invalid value for --fallback-region. Expected a non-empty region.' },
       { args: ['--snap-max-size', '31'], message: 'Invalid value for --snap-max-size. Expected an integer from 32 to 320.' },
       { args: ['--snap-threshold', '-0.1'], message: 'Invalid value for --snap-threshold. Expected a number from 0 to 1.' },
       { args: ['--sigma', '151'], message: 'Invalid value for --sigma. Expected a number from 1 to 150.' },
@@ -397,6 +399,80 @@ describe('image remove-watermark-batch command', () => {
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain(testCase.message);
     }
+  });
+
+  it('accepts inclusive tuning range boundaries', async () => {
+    const { tempDir, inputs } = await createInputFiles(1);
+    const createJobInputs: unknown[] = [];
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_batch_source_1',
+      filename: 'inputs.zip',
+      mime_type: 'application/zip',
+      size_bytes: 512,
+    }));
+
+    const apiRequest = vi.fn(async ({ body }: { body: { input: unknown } }) => {
+      createJobInputs.push(body.input);
+
+      return {
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      };
+    });
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark-batch',
+      '--inputs',
+      ...inputs,
+      '--threshold',
+      '0',
+      '--snap-threshold',
+      '1',
+      '--snap-max-size',
+      '32',
+      '--sigma',
+      '150',
+      '--strength',
+      '0',
+      '--radius',
+      '25',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(createJobInputs).toEqual([
+      {
+        input_file_id: 'file_batch_source_1',
+        threshold: 0,
+        snap_threshold: 1,
+        snap_max_size: 32,
+        sigma: 150,
+        strength: 0,
+        radius: 25,
+      },
+    ]);
+
+    await rm(tempDir, { recursive: true, force: true });
   });
 
   it('splits 30 inputs into 6 default chunk jobs, merges outputs, and prints a batch summary', async () => {

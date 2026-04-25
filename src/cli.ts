@@ -181,10 +181,41 @@ function parseIntegerRangeOption(
   };
 }
 
+function parseNonEmptyStringOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  description: string,
+): { value: string; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index);
+
+  if (optionValue.value.trim().length === 0) {
+    throw new Error(`Invalid value for ${flag}. Expected ${description}.`);
+  }
+
+  return optionValue;
+}
+
 function getTuning(parsed: { tuning?: ImageRemoveWatermarkBatchTuningInput }): ImageRemoveWatermarkBatchTuningInput {
   parsed.tuning ??= {};
   return parsed.tuning;
 }
+
+const REMOVE_WATERMARK_BATCH_TUNING_FLAGS = new Set([
+  '--threshold',
+  '--region',
+  '--fallback-region',
+  '--snap',
+  '--no-snap',
+  '--snap-max-size',
+  '--snap-threshold',
+  '--denoise',
+  '--sigma',
+  '--strength',
+  '--radius',
+  '--force',
+]);
 
 export function getRootHelp(): string {
   return [
@@ -1354,7 +1385,10 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
   return parsed;
 }
 
-function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean }): {
+function parseZipJobBatchArgs(args: string[], options: {
+  allowChunkSize: boolean;
+  allowRemoveWatermarkBatchTuning?: boolean;
+}): {
   inputs?: string[];
   inputGlob?: string;
   chunkSize?: number;
@@ -1391,6 +1425,10 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (REMOVE_WATERMARK_BATCH_TUNING_FLAGS.has(flag) && !options.allowRemoveWatermarkBatchTuning) {
+      unknownOption(flag);
+    }
 
     if (flag === '--base-url') {
       if (!value) {
@@ -1496,10 +1534,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--threshold') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
       getTuning(parsed).threshold = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
@@ -1509,14 +1543,7 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--region') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
-      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
-      if (!parsedValue.value) {
-        missingOptionValue(flag);
-      }
+      const parsedValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty region');
       getTuning(parsed).region = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
         index += 1;
@@ -1525,15 +1552,8 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--fallback-region') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
-      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
-      if (!parsedValue.value) {
-        missingOptionValue(flag);
-      }
-      getTuning(parsed).fallback_region = parsedValue.value;
+      const parsedValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty region');
+      getTuning(parsed).fallbackRegion = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
         index += 1;
       }
@@ -1541,30 +1561,18 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--snap') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       getTuning(parsed).snap = true;
       continue;
     }
 
     if (flag === '--no-snap') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       getTuning(parsed).snap = false;
       continue;
     }
 
     if (flag === '--snap-max-size') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 32, 320);
-      getTuning(parsed).snap_max_size = parsedValue.value;
+      getTuning(parsed).snapMaxSize = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
         index += 1;
       }
@@ -1572,12 +1580,8 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--snap-threshold') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
-      getTuning(parsed).snap_threshold = parsedValue.value;
+      getTuning(parsed).snapThreshold = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
         index += 1;
       }
@@ -1585,10 +1589,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--denoise') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
       const allowedDenoise = ['ai', 'ns', 'telea', 'soft', 'off'] as const;
 
@@ -1604,10 +1604,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--sigma') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 1, 150);
       getTuning(parsed).sigma = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
@@ -1617,10 +1613,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--strength') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 300);
       getTuning(parsed).strength = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
@@ -1630,10 +1622,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--radius') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 1, 25);
       getTuning(parsed).radius = parsedValue.value;
       if (consumeNext || parsedValue.consumeNext) {
@@ -1643,10 +1631,6 @@ function parseZipJobBatchArgs(args: string[], options: { allowChunkSize: boolean
     }
 
     if (flag === '--force') {
-      if (!options.allowChunkSize) {
-        unknownOption(flag);
-      }
-
       getTuning(parsed).force = true;
       continue;
     }
@@ -1696,7 +1680,10 @@ const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
 const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
 
 function parseImageRemoveWatermarkBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
-  return parseZipJobBatchArgs(args, { allowChunkSize: true });
+  return parseZipJobBatchArgs(args, {
+    allowChunkSize: true,
+    allowRemoveWatermarkBatchTuning: true,
+  });
 }
 
 function parseDocumentDocxToMarkdownBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {

@@ -46,15 +46,35 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
 export interface ImageRemoveWatermarkBatchTuningInput {
   threshold?: number;
   region?: string;
-  fallback_region?: string;
+  fallbackRegion?: string;
   snap?: boolean;
-  snap_max_size?: number;
-  snap_threshold?: number;
+  snapMaxSize?: number;
+  snapThreshold?: number;
   denoise?: 'ai' | 'ns' | 'telea' | 'soft' | 'off';
   sigma?: number;
   strength?: number;
   radius?: number;
   force?: boolean;
+}
+
+function buildHostedTuningInput(tuning: ImageRemoveWatermarkBatchTuningInput | undefined): Record<string, unknown> {
+  if (!tuning) {
+    return {};
+  }
+
+  return {
+    ...('threshold' in tuning ? { threshold: tuning.threshold } : {}),
+    ...('region' in tuning ? { region: tuning.region } : {}),
+    ...('fallbackRegion' in tuning ? { fallback_region: tuning.fallbackRegion } : {}),
+    ...('snap' in tuning ? { snap: tuning.snap } : {}),
+    ...('snapMaxSize' in tuning ? { snap_max_size: tuning.snapMaxSize } : {}),
+    ...('snapThreshold' in tuning ? { snap_threshold: tuning.snapThreshold } : {}),
+    ...('denoise' in tuning ? { denoise: tuning.denoise } : {}),
+    ...('sigma' in tuning ? { sigma: tuning.sigma } : {}),
+    ...('strength' in tuning ? { strength: tuning.strength } : {}),
+    ...('radius' in tuning ? { radius: tuning.radius } : {}),
+    ...('force' in tuning ? { force: tuning.force } : {}),
+  };
 }
 
 export interface ImageRemoveWatermarkBatchJobOutput {
@@ -342,7 +362,7 @@ async function createChunkJob(
     dependencies.progress.creatingJob();
     const input = {
       input_file_id: sourceFile.file_id,
-      ...(args.tuning ?? {}),
+      ...buildHostedTuningInput(args.tuning),
     };
     const createJobResponse = await dependencies.apiRequest<CreateJobResponse>({
       baseUrl: args.baseUrl,
