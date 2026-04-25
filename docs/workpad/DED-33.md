@@ -42,6 +42,18 @@ Intended change:
 - Post-rework sync `npm test`
 - Post-rework sync `npm run build`
 - Post-rework sync hosted create-job smoke with the same `node dist/cli.js image remove-watermark-batch ... --env test --config-path /Users/dede/.config/toollist/config.json --json` command
+- Second rework `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts` (RED: explicit `undefined` tuning fields appeared in hosted input keys)
+- Second rework `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts` (GREEN: 13 passed)
+- Second rework `npm run lint`
+- Second rework `npm test`
+- Second rework `npm run build`
+- Second rework `/Users/dede/Downloads/toollist/toolist-symphony/scripts/check_cli_hosted_smoke_env.py`
+- Second rework hosted create-job smoke with `node dist/cli.js image remove-watermark-batch --inputs .tmp/ded-33-smoke/image-1.png .tmp/ded-33-smoke/image-2.png --force --region 'br:0,0,160,160' --denoise ai --sigma 50 --strength 300 --threshold 0.4 --snap --snap-max-size 160 --snap-threshold 0.6 --radius 12 --env test --config-path /Users/dede/.config/toollist/config.json --json`
+- Second rework `git fetch origin staging && git rebase origin/staging`
+- Second rework post-sync `npm run lint`
+- Second rework post-sync `npm test`
+- Second rework post-sync `npm run build`
+- Second rework post-sync hosted create-job smoke with the same `node dist/cli.js image remove-watermark-batch ... --env test --config-path /Users/dede/.config/toollist/config.json --json` command
 
 ## Validation Results
 
@@ -73,6 +85,20 @@ Intended change:
   - `npm test`: 34 files passed, 237 tests passed.
   - `npm run build`: passed.
   - Hosted create-job smoke: created queued test job `job_84161bc8d5f34e5ca58273be7979f6af` with tuning flags.
+- Second rework addressed opencode round 2 feedback:
+  - Added direct command regression coverage for explicit `undefined` tuning values.
+  - Changed hosted tuning mapping to include only values that are not `undefined`, preserving valid `false` and `0` values.
+- Second rework validation passed:
+  - Focused integration test: 13 passed.
+  - `npm run lint`: passed.
+  - `npm test`: 34 files passed, 238 tests passed.
+  - `npm run build`: passed.
+  - Hosted create-job smoke: created queued test job `job_aa4b1e24af2d4aeb9f0a4a5ed8f0b40e` with tuning flags.
+- Branch remained up to date with `origin/staging`; second rework post-sync validation passed:
+  - `npm run lint`: passed.
+  - `npm test`: 34 files passed, 238 tests passed.
+  - `npm run build`: passed.
+  - Hosted create-job smoke: created queued test job `job_4259826e72144e9e8bc28c7d5664cd4e` with tuning flags.
 
 ## Blockers
 

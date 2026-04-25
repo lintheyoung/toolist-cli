@@ -899,4 +899,70 @@ describe('image remove-watermark-batch command', () => {
       force: true,
     });
   });
+
+  it('omits undefined tuning fields from direct command calls', async () => {
+    const createJobInputs: unknown[] = [];
+    const { imageRemoveWatermarkBatchCommand } = await import(
+      '../../src/commands/image/remove-watermark-batch.js'
+    );
+
+    await imageRemoveWatermarkBatchCommand(
+      {
+        inputs: ['/tmp/a.jpg'],
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        tuning: {
+          threshold: undefined,
+          region: 'br:0,0,160,160',
+          fallbackRegion: undefined,
+          snap: false,
+          snapMaxSize: undefined,
+          snapThreshold: undefined,
+          denoise: undefined,
+          sigma: undefined,
+          strength: 0,
+          radius: undefined,
+          force: undefined,
+        },
+      },
+      {
+        resolveZipBatchInputPaths: vi.fn(async () => ['/tmp/a.jpg']),
+        createZipBatchInput: vi.fn(async () => ({
+          zipPath: '/tmp/caller-owned/inputs.zip',
+          inputCount: 1,
+        })),
+        uploadCommand: vi.fn(async () => ({
+          file_id: 'file_batch_source_1',
+        })),
+        apiRequest: vi.fn(async ({ body }: { body: { input: unknown } }) => {
+          createJobInputs.push(body.input);
+
+          return {
+            data: {
+              job: {
+                id: 'job_chunk_1',
+                status: 'queued',
+                toolName: 'image.gemini_nb_remove_watermark_batch',
+                toolVersion: '2026-04-15',
+              },
+            },
+            request_id: 'req_job_undefined_tuning',
+          };
+        }),
+      },
+    );
+
+    expect(Object.keys(createJobInputs[0] as Record<string, unknown>).sort()).toEqual([
+      'input_file_id',
+      'region',
+      'snap',
+      'strength',
+    ]);
+    expect(createJobInputs[0]).toStrictEqual({
+      input_file_id: 'file_batch_source_1',
+      region: 'br:0,0,160,160',
+      snap: false,
+      strength: 0,
+    });
+  });
 });

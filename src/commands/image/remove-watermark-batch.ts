@@ -63,17 +63,17 @@ function buildHostedTuningInput(tuning: ImageRemoveWatermarkBatchTuningInput | u
   }
 
   return {
-    ...('threshold' in tuning ? { threshold: tuning.threshold } : {}),
-    ...('region' in tuning ? { region: tuning.region } : {}),
-    ...('fallbackRegion' in tuning ? { fallback_region: tuning.fallbackRegion } : {}),
-    ...('snap' in tuning ? { snap: tuning.snap } : {}),
-    ...('snapMaxSize' in tuning ? { snap_max_size: tuning.snapMaxSize } : {}),
-    ...('snapThreshold' in tuning ? { snap_threshold: tuning.snapThreshold } : {}),
-    ...('denoise' in tuning ? { denoise: tuning.denoise } : {}),
-    ...('sigma' in tuning ? { sigma: tuning.sigma } : {}),
-    ...('strength' in tuning ? { strength: tuning.strength } : {}),
-    ...('radius' in tuning ? { radius: tuning.radius } : {}),
-    ...('force' in tuning ? { force: tuning.force } : {}),
+    ...(tuning.threshold !== undefined ? { threshold: tuning.threshold } : {}),
+    ...(tuning.region !== undefined ? { region: tuning.region } : {}),
+    ...(tuning.fallbackRegion !== undefined ? { fallback_region: tuning.fallbackRegion } : {}),
+    ...(tuning.snap !== undefined ? { snap: tuning.snap } : {}),
+    ...(tuning.snapMaxSize !== undefined ? { snap_max_size: tuning.snapMaxSize } : {}),
+    ...(tuning.snapThreshold !== undefined ? { snap_threshold: tuning.snapThreshold } : {}),
+    ...(tuning.denoise !== undefined ? { denoise: tuning.denoise } : {}),
+    ...(tuning.sigma !== undefined ? { sigma: tuning.sigma } : {}),
+    ...(tuning.strength !== undefined ? { strength: tuning.strength } : {}),
+    ...(tuning.radius !== undefined ? { radius: tuning.radius } : {}),
+    ...(tuning.force !== undefined ? { force: tuning.force } : {}),
   };
 }
 
