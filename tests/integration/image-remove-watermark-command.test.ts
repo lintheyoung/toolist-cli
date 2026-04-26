@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock('../../src/commands/files/upload.js');
@@ -49,22 +50,44 @@ describe('image remove-watermark command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_watermark_123',
-      status: 'succeeded',
-      toolName: 'image.gemini_nb_remove_watermark',
-      toolVersion: '2026-04-15',
-      input: {
-        input_file_id: 'file_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        args.onStatus?.('dispatching', {
+          id: 'job_watermark_123',
+          status: 'dispatching',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_watermark_123',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        });
+        return {
+          id: 'job_watermark_123',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+          input: {
+            input_file_id: 'file_source_123',
+          },
+          result: {
+            output: {
+              outputFileId: 'file_output_123',
+              mimeType: 'image/png',
+              storageKey: 'ws/77/output/job_watermark_123/output.png',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          outputFileId: 'file_output_123',
-          mimeType: 'image/png',
-          storageKey: 'ws/77/output/job_watermark_123/output.png',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -119,11 +142,16 @@ describe('image remove-watermark command', () => {
       token: 'tgc_cli_secret',
       configPath: undefined,
     });
-    expect(apiRequest).toHaveBeenCalledWith({
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'https://api.example.com',
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark',
         idempotency_key: expect.any(String),
@@ -131,13 +159,14 @@ describe('image remove-watermark command', () => {
           input_file_id: 'file_source_123',
         },
       }),
-    });
+    }));
     expect(waitJobCommand).toHaveBeenCalledWith({
       jobId: 'job_watermark_123',
       baseUrl: 'https://api.example.com',
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_output_123/download',
@@ -164,7 +193,18 @@ describe('image remove-watermark command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: dispatching',
+      'Status: succeeded',
+      'Downloading output: file_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
   });
 
   it('defaults remove-watermark to the hosted Toolist base URL when --base-url is omitted', async () => {
@@ -221,15 +261,20 @@ describe('image remove-watermark command', () => {
       token: 'tgc_cli_secret',
       configPath: '/tmp/toollist-cli-empty-config.json',
     });
-    expect(apiRequest).toHaveBeenCalledWith({
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'https://tooli.st',
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark',
       }),
-    });
+    }));
   });
 
   it('skips waitJobCommand and downloads directly when the create-job response is already terminal and --output is set', async () => {
@@ -317,11 +362,16 @@ describe('image remove-watermark command', () => {
       token: 'tgc_cli_secret',
       configPath: undefined,
     });
-    expect(apiRequest).toHaveBeenCalledWith({
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'https://api.example.com',
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark',
         idempotency_key: expect.any(String),
@@ -329,7 +379,7 @@ describe('image remove-watermark command', () => {
           input_file_id: 'file_source_123',
         },
       }),
-    });
+    }));
     expect(waitJobCommand).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_output_123/download',
@@ -356,7 +406,16 @@ describe('image remove-watermark command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+      'Waiting for job...',
+      'Status: succeeded',
+      'Downloading output: file_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
   });
 
   it('returns immediately when neither --wait nor --output is set', async () => {
@@ -420,11 +479,16 @@ describe('image remove-watermark command', () => {
       token: 'tgc_cli_secret',
       configPath: undefined,
     });
-    expect(apiRequest).toHaveBeenCalledWith({
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: 'https://api.example.com',
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.gemini_nb_remove_watermark',
         idempotency_key: expect.any(String),
@@ -432,7 +496,7 @@ describe('image remove-watermark command', () => {
           input_file_id: 'file_source_123',
         },
       }),
-    });
+    }));
     expect(waitJobCommand).not.toHaveBeenCalled();
     expect(JSON.parse(result.stdout)).toEqual({
       id: 'job_watermark_123',
@@ -440,10 +504,367 @@ describe('image remove-watermark command', () => {
       toolName: 'image.gemini_nb_remove_watermark',
       toolVersion: '2026-04-15',
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_source_123',
+      'Creating job...',
+      'Created job: job_watermark_123',
+    ]);
   });
 
-  it('fails when the downloaded output cannot be retrieved after waiting', async () => {
+  it('prints create job stage context when the request fails in transport', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Creating job...');
+    expect(result.stderr).toContain('Create job request failed: fetch failed');
+    expect(fetch).toHaveBeenCalledTimes(3);
+  }, 10_000);
+
+  it('retries a transient output download transport failure and preserves stdout JSON', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const outputPath = join(tempDir, 'photo-clean.png');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_watermark_123',
+      status: 'succeeded',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      input: {
+        input_file_id: 'file_source_123',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/png',
+          storageKey: 'ws/77/output/job_watermark_123/output.png',
+        },
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_watermark_123',
+    }));
+
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(Buffer.from('clean png bytes'), {
+          status: 200,
+          headers: {
+            'content-type': 'image/png',
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: 'job_watermark_123',
+      status: 'succeeded',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      input: {
+        input_file_id: 'file_source_123',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/png',
+          storageKey: 'ws/77/output/job_watermark_123/output.png',
+        },
+      },
+    });
+    expect(await readFile(outputPath)).toEqual(Buffer.from('clean png bytes'));
+    expect(result.stderr).toContain('Output download failed: fetch failed');
+    expect(result.stderr).toContain('Retrying output download (1/4) in 1000ms...');
+  }, 10_000);
+
+  it('retries a transient output download 5xx response and preserves stdout JSON', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const outputPath = join(tempDir, 'photo-clean.png');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_watermark_123',
+      status: 'succeeded',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      input: {
+        input_file_id: 'file_source_123',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/png',
+          storageKey: 'ws/77/output/job_watermark_123/output.png',
+        },
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_watermark_123',
+    }));
+
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('Gateway unavailable.', {
+          status: 503,
+          statusText: 'Service Unavailable',
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from('clean png bytes'), {
+          status: 200,
+          headers: {
+            'content-type': 'image/png',
+          },
+        }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(result.stdout)).toEqual({
+      id: 'job_watermark_123',
+      status: 'succeeded',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      input: {
+        input_file_id: 'file_source_123',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/png',
+          storageKey: 'ws/77/output/job_watermark_123/output.png',
+        },
+      },
+    });
+    expect(await readFile(outputPath)).toEqual(Buffer.from('clean png bytes'));
+    expect(result.stderr).toContain('Output download failed: HTTP 503 Service Unavailable');
+    expect(result.stderr).toContain('Retrying output download (1/4) in 1000ms...');
+  }, 10_000);
+
+  it('prints output download stage context after retry exhaustion', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const outputPath = join(tempDir, 'photo-clean.png');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_watermark_123',
+      status: 'succeeded',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      input: {
+        input_file_id: 'file_source_123',
+      },
+      result: {
+        output: {
+          outputFileId: 'file_output_123',
+          mimeType: 'image/png',
+          storageKey: 'ws/77/output/job_watermark_123/output.png',
+        },
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_watermark_123',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_watermark_123',
+    }));
+
+    const fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Downloading output: file_output_123');
+    expect(result.stderr).toContain('Output download failed: fetch failed');
+    expect(fetch).toHaveBeenCalledTimes(4);
+  }, 20_000);
+
+  it('does not retry when the downloaded output returns a 4xx response', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo-clean.png');
 
@@ -492,8 +913,8 @@ describe('image remove-watermark command', () => {
     }));
 
     const fetch = vi.fn(async () =>
-      new Response('server error', {
-        status: 500,
+      new Response('not found', {
+        status: 404,
       }),
     );
     vi.stubGlobal('fetch', fetch);
@@ -524,8 +945,105 @@ describe('image remove-watermark command', () => {
     ]);
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr).toContain('Downloading output: file_output_123');
     expect(result.stderr).toContain('Failed to download watermark-removed file file_output_123.');
     expect(waitJobCommand).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('prints backend job failure details before checking output files', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
+    const outputPath = join(tempDir, 'photo-clean.png');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_watermark_failed_402',
+      status: 'failed',
+      toolName: 'image.gemini_nb_remove_watermark',
+      toolVersion: '2026-04-15',
+      errorCode: 'PROVIDER_REQUEST_FAILED',
+      errorMessage: 'Replicate request failed with status 402',
+      progress: {
+        externalTaskId: 'replicate_prediction_123',
+        providerStatus: 'failed',
+        submittedAt: '2026-04-21T02:00:00.000Z',
+        completedAt: '2026-04-21T02:00:03.000Z',
+        providerDurationMs: 3000,
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_watermark_failed_402',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_watermark_failed_402',
+    }));
+
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-watermark',
+      '--input',
+      '/tmp/photo.png',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Uploading input...');
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr.indexOf('Status: failed')).toBeLessThan(
+      result.stderr.indexOf('Job failed: job_watermark_failed_402'),
+    );
+    expect(result.stderr).toContain('Job failed: job_watermark_failed_402');
+    expect(result.stderr).toContain('Status: failed');
+    expect(result.stderr).toContain('Error code: PROVIDER_REQUEST_FAILED');
+    expect(result.stderr).toContain('Error message: Replicate request failed with status 402');
+    expect(result.stderr).toContain('External task id: replicate_prediction_123');
+    expect(result.stderr).toContain('Provider status: failed');
+    expect(result.stderr).toContain('Submitted at: 2026-04-21T02:00:00.000Z');
+    expect(result.stderr).toContain('Completed at: 2026-04-21T02:00:03.000Z');
+    expect(result.stderr).toContain('Provider duration ms: 3000');
+    expect(result.stderr).not.toContain('did not produce an output file');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

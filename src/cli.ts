@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import { documentDocxToMarkdownBatchCommand } from './commands/document/docx-to-markdown-batch.js';
 import { documentDocxToMarkdownCommand } from './commands/document/docx-to-markdown.js';
@@ -11,7 +12,10 @@ import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
 import { imageRemoveBackgroundCommand } from './commands/image/remove-background.js';
 import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
-import { imageRemoveWatermarkBatchCommand } from './commands/image/remove-watermark-batch.js';
+import {
+  imageRemoveWatermarkBatchCommand,
+  type ImageRemoveWatermarkBatchTuningInput,
+} from './commands/image/remove-watermark-batch.js';
 import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
 import { loginCommand } from './commands/login.js';
@@ -25,6 +29,8 @@ import { listToolsCommand } from './commands/tools/list.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
+import { createStderrProgressReporter } from './lib/progress-reporter.js';
+import { createStderrRetryReporter, withRetryHandler } from './lib/retry.js';
 import {
   DEFAULT_ENVIRONMENT,
   resolveEnvironmentBaseUrl,
@@ -57,6 +63,13 @@ function unexpectedPositional(arg: string): never {
 
 function missingOptionValue(flag: string): never {
   throw new Error(`Missing value for option: ${flag}`);
+}
+
+async function writeReportFile(path: string, contents: string): Promise<void> {
+  const resolvedPath = resolve(path);
+
+  await mkdir(dirname(resolvedPath), { recursive: true });
+  await writeFile(resolvedPath, contents, 'utf8');
 }
 
 function parseOption(arg: string, args: string[], index: number): {
@@ -94,6 +107,115 @@ function isIntegerInRange(value: number, minimum: number, maximum?: number): boo
 
   return true;
 }
+
+function isNumberInRange(value: number, minimum: number, maximum: number): boolean {
+  return Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function getRequiredOptionValue(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  options: { allowNumericDashValue?: boolean } = {},
+): { value: string; consumeNext: boolean } {
+  if (rawValue !== undefined) {
+    return { value: rawValue, consumeNext: false };
+  }
+
+  const nextArg = args[index + 1];
+  if (
+    options.allowNumericDashValue &&
+    nextArg !== undefined &&
+    Number.isFinite(Number(nextArg))
+  ) {
+    return { value: nextArg, consumeNext: true };
+  }
+
+  missingOptionValue(flag);
+}
+
+function parseNumberRangeOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  minimum: number,
+  maximum: number,
+): { value: number; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index, {
+    allowNumericDashValue: true,
+  });
+  const numberValue = Number(optionValue.value);
+
+  if (!isNumberInRange(numberValue, minimum, maximum)) {
+    throw new Error(`Invalid value for ${flag}. Expected a number from ${minimum} to ${maximum}.`);
+  }
+
+  return {
+    value: numberValue,
+    consumeNext: optionValue.consumeNext,
+  };
+}
+
+function parseIntegerRangeOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  minimum: number,
+  maximum: number,
+): { value: number; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index, {
+    allowNumericDashValue: true,
+  });
+  const numberValue = Number(optionValue.value);
+
+  if (!isIntegerInRange(numberValue, minimum, maximum)) {
+    throw new Error(`Invalid value for ${flag}. Expected an integer from ${minimum} to ${maximum}.`);
+  }
+
+  return {
+    value: numberValue,
+    consumeNext: optionValue.consumeNext,
+  };
+}
+
+function parseNonEmptyStringOption(
+  flag: string,
+  rawValue: string | undefined,
+  args: string[],
+  index: number,
+  description: string,
+): { value: string; consumeNext: boolean } {
+  const optionValue = getRequiredOptionValue(flag, rawValue, args, index);
+
+  if (optionValue.value.trim().length === 0) {
+    throw new Error(`Invalid value for ${flag}. Expected ${description}.`);
+  }
+
+  return optionValue;
+}
+
+function getTuning(parsed: { tuning?: ImageRemoveWatermarkBatchTuningInput }): ImageRemoveWatermarkBatchTuningInput {
+  parsed.tuning ??= {};
+  return parsed.tuning;
+}
+
+const REMOVE_WATERMARK_BATCH_TUNING_FLAGS = new Set([
+  '--threshold',
+  '--region',
+  '--fallback-region',
+  '--snap',
+  '--no-snap',
+  '--snap-max-size',
+  '--snap-threshold',
+  '--denoise',
+  '--sigma',
+  '--strength',
+  '--radius',
+  '--force',
+]);
 
 export function getRootHelp(): string {
   return [
@@ -166,7 +288,7 @@ export function getMarkdownHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images (--input <path> | --root <dir> [--glob <pattern>]) --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist markdown upload-images (--input <path> (--in-place | --output <path>) | --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>)) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Commands:',
     '  upload-images  Upload local Markdown images and rewrite them to public URLs',
@@ -180,20 +302,25 @@ export function getMarkdownUploadImagesHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images --input <path> --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist markdown upload-images --root <dir> [--glob <pattern>] --in-place --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toollist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Options:',
     '  --input        Markdown file path for single-file mode',
     '  --root         Root directory for batch mode',
     '  --glob         Glob pattern used with --root (defaults to *.md)',
     '  --in-place     Write updated Markdown back to the source file',
+    '  --output       Write single-file output Markdown to this path',
+    '  --output-dir   Write batch output Markdown under this directory',
     '  --public       Required safety flag for public image uploads',
     `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
     ENVIRONMENT_OPTION_HELP,
     '  --token        API access token',
     '  --config-path  Path to saved CLI config',
     '  --json         Emit JSON output explicitly (default behavior)',
+    '  --report      Write the JSON report to a file',
+    '  --dry-run     Scan and report local images without uploading or writing Markdown',
+    '  --skip-missing Continue when local images are missing and report them',
   ].join('\n') + '\n';
 }
 
@@ -269,7 +396,7 @@ export function getImageHelp(): string {
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
@@ -370,11 +497,24 @@ export function getImageRemoveWatermarkBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--threshold <0..1>] [--region <region>] [--fallback-region <region>] [--snap | --no-snap] [--snap-max-size <32..320>] [--snap-threshold <0..1>] [--denoise <ai|ns|telea|soft|off>] [--sigma <1..150>] [--strength <0..300>] [--radius <1..25>] [--force] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
     '  --input-glob   Glob pattern for input files',
+    '  --chunk-size   Input files per hosted job, maximum 5 (defaults to 5)',
+    '  --threshold <0..1>        Watermark detection threshold',
+    '  --region <region>         Detection region, for example br:0,0,160,160 or x,y,w,h',
+    '  --fallback-region <region> Fallback detection region',
+    '  --snap                    Enable region snapping',
+    '  --no-snap                 Disable region snapping',
+    '  --snap-max-size <32..320> Maximum snap search size in pixels',
+    '  --snap-threshold <0..1>   Snap detection threshold',
+    '  --denoise <ai|ns|telea|soft|off> Denoise mode',
+    '  --sigma <1..150>          Denoise sigma',
+    '  --strength <0..300>       Processing strength',
+    '  --radius <1..25>          Processing radius',
+    '  --force                   Only use --force when every image should be processed',
     '  --wait         Wait for the batch job to finish',
     '  --timeout      Maximum wait time in seconds',
     '  --output       Download results.zip to a local path',
@@ -775,22 +915,32 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
   root?: string;
   glob?: string;
   inPlace?: boolean;
+  outputDir?: string;
+  output?: string;
   public?: boolean;
   baseUrl?: string;
   env?: ToolistEnvironment;
   token?: string;
   configPath?: string;
+  reportPath?: string;
+  dryRun?: boolean;
+  skipMissing?: boolean;
 } {
   const parsed: {
     input?: string;
     root?: string;
     glob?: string;
     inPlace?: boolean;
+    outputDir?: string;
+    output?: string;
     public?: boolean;
     baseUrl?: string;
     env?: ToolistEnvironment;
     token?: string;
     configPath?: string;
+    reportPath?: string;
+    dryRun?: boolean;
+    skipMissing?: boolean;
   } = {};
 
   for (let index = 0; index < args.length; index += 1) {
@@ -848,6 +998,17 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--report') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.reportPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--input') {
       if (!value) {
         missingOptionValue(flag);
@@ -881,6 +1042,28 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--output-dir') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.outputDir = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--in-place') {
       parsed.inPlace = true;
       continue;
@@ -888,6 +1071,16 @@ function parseMarkdownUploadImagesArgs(args: string[]): {
 
     if (flag === '--public') {
       parsed.public = true;
+      continue;
+    }
+
+    if (flag === '--dry-run') {
+      parsed.dryRun = true;
+      continue;
+    }
+
+    if (flag === '--skip-missing') {
+      parsed.skipMissing = true;
       continue;
     }
 
@@ -1192,9 +1385,14 @@ function parseImageRemoveWatermarkArgs(args: string[]): {
   return parsed;
 }
 
-function parseImageRemoveWatermarkBatchArgs(args: string[]): {
+function parseZipJobBatchArgs(args: string[], options: {
+  allowChunkSize: boolean;
+  allowRemoveWatermarkBatchTuning?: boolean;
+}): {
   inputs?: string[];
   inputGlob?: string;
+  chunkSize?: number;
+  tuning?: ImageRemoveWatermarkBatchTuningInput;
   wait?: boolean;
   timeoutSeconds?: number;
   output?: string;
@@ -1206,6 +1404,8 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
   const parsed: {
     inputs?: string[];
     inputGlob?: string;
+    chunkSize?: number;
+    tuning?: ImageRemoveWatermarkBatchTuningInput;
     wait?: boolean;
     timeoutSeconds?: number;
     output?: string;
@@ -1225,6 +1425,10 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
     }
 
     const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (REMOVE_WATERMARK_BATCH_TUNING_FLAGS.has(flag) && !options.allowRemoveWatermarkBatchTuning) {
+      unknownOption(flag);
+    }
 
     if (flag === '--base-url') {
       if (!value) {
@@ -1303,6 +1507,134 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--chunk-size') {
+      if (!options.allowChunkSize) {
+        unknownOption(flag);
+      }
+
+      if (rawValue === undefined) {
+        missingOptionValue(flag);
+      }
+
+      const chunkSizeValue = Number(rawValue);
+
+      if (!Number.isInteger(chunkSizeValue) || chunkSizeValue <= 0) {
+        throw new Error('Invalid value for --chunk-size.');
+      }
+
+      if (chunkSizeValue > 5) {
+        throw new Error('--chunk-size cannot be greater than 5.');
+      }
+
+      parsed.chunkSize = chunkSizeValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--threshold') {
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
+      getTuning(parsed).threshold = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--region') {
+      const parsedValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty region');
+      getTuning(parsed).region = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--fallback-region') {
+      const parsedValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty region');
+      getTuning(parsed).fallbackRegion = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--snap') {
+      getTuning(parsed).snap = true;
+      continue;
+    }
+
+    if (flag === '--no-snap') {
+      getTuning(parsed).snap = false;
+      continue;
+    }
+
+    if (flag === '--snap-max-size') {
+      const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 32, 320);
+      getTuning(parsed).snapMaxSize = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--snap-threshold') {
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 1);
+      getTuning(parsed).snapThreshold = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--denoise') {
+      const parsedValue = getRequiredOptionValue(flag, rawValue, args, index);
+      const allowedDenoise = ['ai', 'ns', 'telea', 'soft', 'off'] as const;
+
+      if (!allowedDenoise.includes(parsedValue.value as (typeof allowedDenoise)[number])) {
+        throw new Error('Invalid value for --denoise. Expected one of: ai, ns, telea, soft, off.');
+      }
+
+      getTuning(parsed).denoise = parsedValue.value as (typeof allowedDenoise)[number];
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--sigma') {
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 1, 150);
+      getTuning(parsed).sigma = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--strength') {
+      const parsedValue = parseNumberRangeOption(flag, rawValue, args, index, 0, 300);
+      getTuning(parsed).strength = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--radius') {
+      const parsedValue = parseIntegerRangeOption(flag, rawValue, args, index, 1, 25);
+      getTuning(parsed).radius = parsedValue.value;
+      if (consumeNext || parsedValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--force') {
+      getTuning(parsed).force = true;
+      continue;
+    }
+
     if (flag === '--wait') {
       parsed.wait = true;
       continue;
@@ -1345,8 +1677,18 @@ function parseImageRemoveWatermarkBatchArgs(args: string[]): {
 }
 
 const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
-const parseDocumentDocxToMarkdownBatchArgs = parseImageRemoveWatermarkBatchArgs;
 const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
+
+function parseImageRemoveWatermarkBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
+  return parseZipJobBatchArgs(args, {
+    allowChunkSize: true,
+    allowRemoveWatermarkBatchTuning: true,
+  });
+}
+
+function parseDocumentDocxToMarkdownBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
+  return parseZipJobBatchArgs(args, { allowChunkSize: false });
+}
 
 function parseImageResizeArgs(args: string[]): {
   input?: string;
@@ -2671,6 +3013,9 @@ async function resolveApiCredentials(args: {
 }
 
 export async function main(argv: string[] = process.argv.slice(2), io: CliIO = defaultIO): Promise<number> {
+  const onRetry = createStderrRetryReporter(io.stderr);
+  const retryArgs = <T extends object>(args: T): T & { onRetry?: typeof onRetry } =>
+    withRetryHandler(args, onRetry);
   const [command, ...rest] = argv;
 
   if (!command || command === '--help' || command === '-h' || command === 'help') {
@@ -2717,10 +3062,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
   if (command === 'whoami') {
     try {
       const whoamiArgs = parseConfigPathArgs(rest);
-      const result = await whoamiCommand({
+      const result = await whoamiCommand(retryArgs({
         configPath: whoamiArgs.configPath,
         env: whoamiArgs.env,
-      });
+        onRetry,
+      }));
       io.stdout(`${JSON.stringify(result)}\n`);
       return 0;
     } catch (error) {
@@ -2769,14 +3115,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await runBatchCommand({
+        const result = await runBatchCommand(retryArgs({
           manifestPath: parsed.manifestPath,
           resume: parsed.resume ?? false,
           concurrency: parsed.concurrency,
           outputDir: parsed.outputDir,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -2798,10 +3145,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       try {
         const parsed = parseApiArgs(commandArgs, true);
         const credentials = await resolveApiCredentials(parsed);
-        const result = await listToolsCommand({
+        const result = await listToolsCommand(retryArgs({
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -2829,13 +3177,14 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await uploadCommand({
+        const result = await uploadCommand(retryArgs({
           input: parsed.input,
           ...credentials,
           configPath: parsed.configPath,
           computeSha256: parsed.computeSha256 ?? false,
           ...(parsed.public ? { public: true } : {}),
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -2872,8 +3221,33 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           return 1;
         }
 
-        if (!parsed.inPlace) {
-          io.stderr('Missing required option: --in-place\n');
+        if (parsed.inPlace && parsed.outputDir) {
+          io.stderr('Pass either --in-place or --output-dir, not both.\n');
+          return 1;
+        }
+
+        if (parsed.inPlace && parsed.output) {
+          io.stderr('Pass either --in-place or --output, not both.\n');
+          return 1;
+        }
+
+        if (parsed.output && parsed.outputDir) {
+          io.stderr('Pass either --output or --output-dir, not both.\n');
+          return 1;
+        }
+
+        if (parsed.output && !parsed.input) {
+          io.stderr('--output is only supported with --input.\n');
+          return 1;
+        }
+
+        if (parsed.outputDir && !parsed.root) {
+          io.stderr('--output-dir is only supported with --root.\n');
+          return 1;
+        }
+
+        if (!parsed.inPlace && !parsed.output && !parsed.outputDir) {
+          io.stderr('Missing write target: pass --in-place, --output, or --output-dir\n');
           return 1;
         }
 
@@ -2883,16 +3257,28 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await markdownUploadImagesCommand({
+        const result = await markdownUploadImagesCommand(retryArgs({
           input: parsed.input,
           root: parsed.root,
           glob: parsed.glob,
-          inPlace: true,
+          inPlace: parsed.inPlace ?? false,
+          outputDir: parsed.outputDir,
+          output: parsed.output,
           public: true,
+          dryRun: parsed.dryRun,
+          skipMissing: parsed.skipMissing,
           ...credentials,
           configPath: parsed.configPath,
-        });
-        io.stdout(`${JSON.stringify(result)}\n`);
+          onRetry,
+        }));
+        const jsonOutput = `${JSON.stringify(result)}\n`;
+
+        if (parsed.reportPath) {
+          // Keep failed report writes from looking successful to stdout consumers.
+          await writeReportFile(parsed.reportPath, jsonOutput);
+        }
+
+        io.stdout(jsonOutput);
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Markdown upload-images failed.'}\n`);
@@ -2929,13 +3315,16 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await documentDocxToMarkdownCommand({
+        const result = await documentDocxToMarkdownCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -2955,7 +3344,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await documentDocxToMarkdownBatchCommand({
+        const result = await documentDocxToMarkdownBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           wait: parsed.wait,
@@ -2963,6 +3352,9 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -3021,7 +3413,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageConvertCommand({
+        const result = await imageConvertCommand(retryArgs({
           input: parsed.input,
           to: parsed.to,
           quality: parsed.quality,
@@ -3031,7 +3423,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3050,13 +3443,16 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveWatermarkCommand({
+        const result = await imageRemoveWatermarkCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -3076,14 +3472,15 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveBackgroundCommand({
+        const result = await imageRemoveBackgroundCommand(retryArgs({
           input: parsed.input,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3102,15 +3499,20 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageRemoveWatermarkBatchCommand({
+        const result = await imageRemoveWatermarkBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
+          chunkSize: parsed.chunkSize,
+          tuning: parsed.tuning,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
           output: parsed.output,
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
         });
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
@@ -3130,7 +3532,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageConvertBatchCommand({
+        const result = await imageConvertBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           to: parsed.to,
@@ -3142,7 +3544,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3176,7 +3579,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageCropBatchCommand({
+        const result = await imageCropBatchCommand(retryArgs({
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           x: parsed.x,
@@ -3192,7 +3595,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           env: parsed.env,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3216,7 +3620,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageResizeCommand({
+        const result = await imageResizeCommand(retryArgs({
           input: parsed.input,
           width: parsed.width,
           height: parsed.height,
@@ -3228,7 +3632,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3247,11 +3652,12 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageResizeBatchCommand({
+        const result = await imageResizeBatchCommand(retryArgs({
           ...parsed,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3290,7 +3696,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await imageCropCommand({
+        const result = await imageCropCommand(retryArgs({
           input: parsed.input,
           x: parsed.x,
           y: parsed.y,
@@ -3304,7 +3710,8 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           output: parsed.output,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3332,11 +3739,12 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await getJobCommand({
+        const result = await getJobCommand(retryArgs({
           jobId: parsed.jobId,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {
@@ -3355,12 +3763,13 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         }
 
         const credentials = await resolveApiCredentials(parsed);
-        const result = await waitJobCommand({
+        const result = await waitJobCommand(retryArgs({
           jobId: parsed.jobId,
           timeoutSeconds: parsed.timeoutSeconds ?? 60,
           ...credentials,
           configPath: parsed.configPath,
-        });
+          onRetry,
+        }));
         io.stdout(`${JSON.stringify(result)}\n`);
         return 0;
       } catch (error) {

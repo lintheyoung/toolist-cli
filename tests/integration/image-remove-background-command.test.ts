@@ -120,6 +120,16 @@ describe('image remove-background command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.remove_background',
         idempotency_key: expect.any(String),
@@ -311,5 +321,89 @@ describe('image remove-background command', () => {
       },
     });
     expect(result.stderr).toBe('');
+  });
+
+  it('prints backend job failure details before checking the background output file', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-background-'));
+    const outputPath = join(tempDir, 'photo-background-removed.png');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: {
+        'content-type': 'image/png',
+      },
+      filename: 'photo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_background_timed_out',
+      status: 'timed_out',
+      toolName: 'image.remove_background',
+      toolVersion: '2026-04-20',
+      errorCode: 'PROVIDER_TIMEOUT',
+      errorMessage: 'Provider task timed out.',
+      progress: {
+        externalTaskId: 'provider_background_task_123',
+        providerStatus: 'processing',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_background_timed_out',
+          status: 'queued',
+          toolName: 'image.remove_background',
+          toolVersion: '2026-04-20',
+        },
+      },
+      request_id: 'req_create_job_background_timed_out',
+    }));
+
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'image',
+      'remove-background',
+      '--input',
+      '/tmp/photo.png',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Job failed: job_background_timed_out');
+    expect(result.stderr).toContain('Status: timed_out');
+    expect(result.stderr).toContain('Error code: PROVIDER_TIMEOUT');
+    expect(result.stderr).toContain('Error message: Provider task timed out.');
+    expect(result.stderr).toContain('External task id: provider_background_task_123');
+    expect(result.stderr).toContain('Provider status: processing');
+    expect(result.stderr).not.toContain('did not produce an output file');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

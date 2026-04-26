@@ -1,9 +1,11 @@
 import { apiRequest } from '../../lib/http.js';
+import { extendedNetworkRetryOptions, type RetryHandler } from '../../lib/retry.js';
 
 export interface ListToolsCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ToolDefinition {
@@ -46,6 +48,8 @@ export async function listToolsCommand(
     token: args.token,
     method: 'GET',
     path: '/api/v1/tools',
+    stage: 'List tools request failed',
+    retry: extendedNetworkRetryOptions(args.onRetry),
   });
 
   return response.data;

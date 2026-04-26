@@ -5,6 +5,7 @@ import type { BatchManifest, BatchManifestDefaults } from '../../lib/batch-manif
 import { buildHomogeneousImageBatchManifest } from './homogeneous-batch-manifest.js';
 import { assertSupportedConvertInputPath } from './convert-input-policy.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
+import { withRetryHandler, type RetryHandler } from '../../lib/retry.js';
 
 export interface ImageConvertBatchCommandArgs {
   inputs?: string[];
@@ -19,6 +20,7 @@ export interface ImageConvertBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ConvertBatchManifestArgs {
@@ -139,7 +141,7 @@ export async function imageConvertBatchCommand(
   });
 
   return deps.runBatchCommand(
-    {
+    withRetryHandler({
       manifestPath: '<image-convert-batch>',
       resume: args.resume ?? false,
       concurrency: args.concurrency,
@@ -147,7 +149,8 @@ export async function imageConvertBatchCommand(
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    },
+      onRetry: args.onRetry,
+    }, args.onRetry),
     {
       readBatchManifest: async () => manifest,
     },

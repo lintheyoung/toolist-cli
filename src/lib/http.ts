@@ -1,4 +1,10 @@
 import { CliError } from './errors.js';
+import {
+  isRetryableTransportError,
+  withRetry,
+  withStageContext,
+  type RetryOptions,
+} from './retry.js';
 
 type ApiErrorEnvelope = {
   error?: {
@@ -41,6 +47,26 @@ function unexpectedError(status = 0): CliError {
   });
 }
 
+class RetryableHttpResponseError extends CliError {
+  constructor(error: CliError) {
+    super({
+      code: error.code,
+      message: error.message,
+      status: error.status,
+      details: error.details,
+      requestId: error.requestId,
+    });
+  }
+}
+
+function isRetryableHttpStatus(status: number): boolean {
+  return status >= 500 && status <= 599;
+}
+
+function isRetryableApiRequestError(error: unknown): boolean {
+  return error instanceof RetryableHttpResponseError || isRetryableTransportError(error);
+}
+
 function toCliError(status: number, payload: unknown): CliError {
   if (isObject(payload) && isObject(payload.error)) {
     const error = payload.error as ApiErrorEnvelope['error'];
@@ -79,12 +105,44 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
   }
 }
 
+function formatHttpStatus(status: number, statusTextValue = ''): string {
+  const statusText = statusTextValue.trim();
+
+  return statusText
+    ? `HTTP ${status} ${statusText}`
+    : `HTTP ${status}`;
+}
+
+async function retryableHttpResponseError(response: Response): Promise<RetryableHttpResponseError> {
+  const status = response.status;
+  const statusText = response.statusText;
+
+  try {
+    const text = await response.text();
+    const payload = text.length > 0 ? JSON.parse(text) as unknown : undefined;
+
+    return new RetryableHttpResponseError(toCliError(status, payload));
+  } catch {
+    // Retry classification should not depend on whether a transient 5xx body is parseable.
+  }
+
+  return new RetryableHttpResponseError(
+    new CliError({
+      code: 'INTERNAL_UNEXPECTED_ERROR',
+      message: formatHttpStatus(status, statusText),
+      status,
+    }),
+  );
+}
+
 export async function apiRequest<T>(args: {
   baseUrl: string;
   token?: string;
   method?: string;
   path: string;
   body?: unknown;
+  stage?: string;
+  retry?: RetryOptions;
 }): Promise<T> {
   const headers: Record<string, string> = {
     accept: 'application/json',
@@ -103,13 +161,42 @@ export async function apiRequest<T>(args: {
 
   let response: Response;
 
-  try {
-    response = await fetch(buildUrl(args.baseUrl, args.path), {
+  const fetchRequest = async () => {
+    const result = await fetch(buildUrl(args.baseUrl, args.path), {
       method,
       headers,
       body,
     });
-  } catch {
+
+    if (args.stage && args.retry && isRetryableHttpStatus(result.status)) {
+      // Retryable 5xx responses are discarded after this point, so it is safe to
+      // consume the body here to preserve the final staged error message.
+      throw await retryableHttpResponseError(result);
+    }
+
+    return result;
+  };
+
+  try {
+    if (args.stage && args.retry) {
+      response = await withRetry({
+        stage: args.stage,
+        attempts: args.retry.attempts,
+        delaysMs: args.retry.delaysMs,
+        onRetry: args.retry.onRetry,
+        shouldRetry: isRetryableApiRequestError,
+        fn: fetchRequest,
+      });
+    } else if (args.stage) {
+      response = await withStageContext(args.stage, fetchRequest);
+    } else {
+      response = await fetchRequest();
+    }
+  } catch (error) {
+    if (args.stage) {
+      throw error;
+    }
+
     throw unexpectedError();
   }
 

@@ -12,6 +12,7 @@ import {
 } from '../../lib/batch-state.js';
 import { runWithConcurrency } from '../../lib/batch-worker-pool.js';
 import { runBatchItem } from '../../lib/batch-item-runner.js';
+import { withRetryHandler, type RetryHandler } from '../../lib/retry.js';
 
 export type BatchRunSummary = {
   total: number;
@@ -34,6 +35,7 @@ export interface RunBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface RunBatchCommandDependencies {
@@ -227,7 +229,7 @@ export async function runBatchCommand(
     concurrency: Math.max(1, Math.floor(effectiveDefaults?.concurrency ?? 1)),
     worker: async (item: BatchManifestItem) =>
       deps.runBatchItem(
-        {
+        withRetryHandler({
           item,
           defaults: effectiveDefaults,
           credentials: {
@@ -236,7 +238,8 @@ export async function runBatchCommand(
           },
           state,
           statePath,
-        },
+          onRetry: args.onRetry,
+        }, args.onRetry),
       ),
   });
 
