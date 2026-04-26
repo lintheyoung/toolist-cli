@@ -32,6 +32,25 @@ Intended change:
 - Post-sync `npm test`
 - Post-sync `npm run build`
 - Post-sync hosted smoke with the same larger-PNG `node dist/cli.js image remove-watermark-batch ... --wait --output ... --env test --config-path /Users/dede/.config/toollist/config.json --json` command
+- Opencode review round 1: `changes_requested`
+- Rework `npm test -- tests/unit/job-output.test.ts` (RED: 2 expected timeout-budget failures)
+- Rework `npm test -- tests/unit/job-output.test.ts` (GREEN: 3 passed)
+- Rework `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts` (GREEN: 17 passed)
+- Rework `npm run lint`
+- Rework `npm test`
+- Rework `npm run build`
+- Rework hosted smoke with the same larger-PNG `node dist/cli.js image remove-watermark-batch ... --wait --output ... --env test --config-path /Users/dede/.config/toollist/config.json --json` command
+- Rework `git fetch origin staging && git rebase origin/staging` (already up to date)
+- Rework post-sync `npm run lint`
+- Rework post-sync `npm test`
+- Rework post-sync `npm run build`
+- Second opencode review round 1: `changes_requested`
+- Second rework `npm test -- tests/unit/job-output.test.ts` (GREEN: 3 passed)
+- Second rework `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts` (GREEN: 17 passed)
+- Second rework `npm run lint`
+- Second rework `npm test`
+- Second rework `npm run build`
+- Second rework hosted smoke with the same larger-PNG `node dist/cli.js image remove-watermark-batch ... --wait --output ... --env test --config-path /Users/dede/.config/toollist/config.json --json` command
 
 ## Validation Results
 
@@ -46,6 +65,29 @@ Intended change:
   - `npm test`: 34 files passed, 242 tests passed.
   - `npm run build`: passed.
   - Hosted `--wait --output` smoke passed with job `job_e57fdb8dd6334195afe8fc840deea208`; downloaded `file_job_e57fdb8dd6334195afe8fc840deea208_output` and wrote `.tmp/ded-35-smoke/results.zip`.
+- Rework addressed opencode round 1 feedback:
+  - Added focused `job-output` unit tests for timeout budget behavior.
+  - Changed output-ID polling to use a deadline based on `now()`.
+  - Capped transient retry sleeps to remaining output-ID wait budget.
+- Rework validation passed:
+  - `npm test -- tests/unit/job-output.test.ts`: 3 passed.
+  - `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts`: 17 passed.
+  - `npm run lint`: passed.
+  - `npm test`: 35 files passed, 245 tests passed.
+  - `npm run build`: passed.
+  - Hosted `--wait --output` smoke passed with job `job_a99f131c6d144615976b2fedd950df1b`; downloaded `file_job_a99f131c6d144615976b2fedd950df1b_output` and wrote `.tmp/ded-35-smoke/results.zip`.
+- Rework branch remained up to date with `origin/staging`; post-sync validation passed:
+  - `npm run lint`: passed.
+  - `npm test`: 35 files passed, 245 tests passed.
+  - `npm run build`: passed.
+- Second rework addressed opencode round 1 feedback by removing the ambiguous early return from the bounded retry sleep callback.
+- Second rework validation passed:
+  - `npm test -- tests/unit/job-output.test.ts`: 3 passed.
+  - `npm test -- tests/integration/image-remove-watermark-batch-command.test.ts`: 17 passed.
+  - `npm run lint`: passed.
+  - `npm test`: 35 files passed, 245 tests passed.
+  - `npm run build`: passed.
+  - Hosted `--wait --output` smoke passed with job `job_54ad1079cc0c4569be8ed643e8d6270b`; downloaded `file_job_54ad1079cc0c4569be8ed643e8d6270b_output` and wrote `.tmp/ded-35-smoke/results.zip`.
 
 ## Blockers
 

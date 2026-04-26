@@ -48,6 +48,7 @@ export interface WaitForOutputFileIdResult<TJob extends JobWithOutputFile> {
 export interface WaitForOutputFileIdDependencies {
   apiRequest: typeof apiRequest;
   sleep: (ms: number) => Promise<void>;
+  now: () => number;
 }
 
 function defaultSleep(ms: number): Promise<void> {
@@ -60,6 +61,7 @@ function createDefaultDependencies(): WaitForOutputFileIdDependencies {
   return {
     apiRequest,
     sleep: defaultSleep,
+    now: () => Date.now(),
   };
 }
 
@@ -88,6 +90,7 @@ function isRetryableOutputLookupError(error: unknown): boolean {
 async function refreshJob<TJob extends JobWithOutputFile>(
   args: WaitForOutputFileIdArgs<TJob>,
   dependencies: WaitForOutputFileIdDependencies,
+  getRemainingMs: () => number,
 ): Promise<TJob> {
   const retry = networkRetryOptions(args.onRetry);
 
@@ -96,8 +99,11 @@ async function refreshJob<TJob extends JobWithOutputFile>(
     attempts: retry.attempts,
     delaysMs: retry.delaysMs,
     onRetry: retry.onRetry,
-    sleep: dependencies.sleep,
-    shouldRetry: isRetryableOutputLookupError,
+    sleep: async (ms) => {
+      const remainingMs = getRemainingMs();
+      await dependencies.sleep(Math.max(0, Math.min(ms, remainingMs)));
+    },
+    shouldRetry: (error) => getRemainingMs() > 0 && isRetryableOutputLookupError(error),
     fn: async () => {
       const response = await dependencies.apiRequest<GetJobResponse<TJob>>({
         baseUrl: args.baseUrl,
@@ -131,11 +137,12 @@ export async function waitForOutputFileId<TJob extends JobWithOutputFile>(
   };
   const timeoutMs = Math.max(0, args.timeoutMs ?? DEFAULT_OUTPUT_FILE_ID_TIMEOUT_MS);
   const pollIntervalMs = Math.max(1, args.pollIntervalMs ?? DEFAULT_OUTPUT_FILE_ID_POLL_INTERVAL_MS);
-  let elapsedMs = 0;
+  const deadline = deps.now() + timeoutMs;
   let lastJob = args.job;
+  const getRemainingMs = () => Math.max(0, deadline - deps.now());
 
-  while (elapsedMs <= timeoutMs) {
-    lastJob = await refreshJob(args, deps);
+  while (getRemainingMs() > 0) {
+    lastJob = await refreshJob(args, deps, getRemainingMs);
 
     const outputFileId = getJobOutputFileId(lastJob);
 
@@ -146,7 +153,7 @@ export async function waitForOutputFileId<TJob extends JobWithOutputFile>(
       };
     }
 
-    const remainingMs = timeoutMs - elapsedMs;
+    const remainingMs = getRemainingMs();
 
     if (remainingMs <= 0) {
       break;
@@ -154,7 +161,6 @@ export async function waitForOutputFileId<TJob extends JobWithOutputFile>(
 
     const delayMs = Math.min(pollIntervalMs, remainingMs);
     await deps.sleep(delayMs);
-    elapsedMs += delayMs;
   }
 
   return {
