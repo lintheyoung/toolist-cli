@@ -10,6 +10,7 @@ import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
 import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
+import { imageGptImage2Command } from './commands/image/gpt-image-2.js';
 import { imageRemoveBackgroundCommand } from './commands/image/remove-background.js';
 import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
 import {
@@ -242,6 +243,7 @@ export function getRootHelp(): string {
     '',
     'Discover supported tools:',
     '  toollist tools list',
+    '  toollist image gpt-image-2 --prompt "Create a clean square app icon..." --wait --output icon.png',
     '  toollist image remove-background --input photo.png --wait --output photo-background-removed.png',
     '',
     'Options:',
@@ -393,6 +395,7 @@ export function getImageHelp(): string {
     '',
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
@@ -404,6 +407,7 @@ export function getImageHelp(): string {
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
+    '  gpt-image-2  Generate an image with Kie GPT Image 2 through the API',
     '  convert-batch  Convert multiple images through the batch wrapper',
     '  remove-background  Remove the background from an image through the API',
     '  remove-watermark  Remove a watermark from an image through the API',
@@ -412,6 +416,29 @@ export function getImageHelp(): string {
     '  resize-batch  Resize multiple images through the batch wrapper',
     '  crop-batch  Crop multiple images through the batch wrapper',
     '  crop     Crop an image through the API',
+  ].join('\n') + '\n';
+}
+
+export function getImageGptImage2Help(): string {
+  return [
+    'toollist image gpt-image-2',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --prompt       Text prompt for image generation',
+    '  --aspect-ratio Aspect ratio, for example auto, 1:1, 16:9, or 9:16',
+    '  --wait         Wait for the generation job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download generated image to a local path',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -1678,6 +1705,148 @@ function parseZipJobBatchArgs(args: string[], options: {
 
 const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
 const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
+
+function parseImageGptImage2Args(args: string[]): {
+  prompt?: string;
+  aspectRatio?: string;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  env?: ToolistEnvironment;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    prompt?: string;
+    aspectRatio?: string;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    env?: ToolistEnvironment;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--prompt') {
+      const promptValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty prompt');
+      parsed.prompt = promptValue.value;
+      if (consumeNext || promptValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--aspect-ratio') {
+      const aspectRatioValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty aspect ratio');
+      parsed.aspectRatio = aspectRatioValue.value;
+      if (consumeNext || aspectRatioValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
 
 function parseImageRemoveWatermarkBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
   return parseZipJobBatchArgs(args, {
@@ -3398,6 +3567,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       return 0;
     }
 
+    if (subcommand === 'gpt-image-2' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageGptImage2Help());
+      return 0;
+    }
+
     if (subcommand === 'convert') {
       try {
         const parsed = parseImageConvertArgs(commandArgs);
@@ -3485,6 +3659,36 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image remove-background failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'gpt-image-2') {
+      try {
+        const parsed = parseImageGptImage2Args(commandArgs);
+
+        if (!parsed.prompt) {
+          io.stderr('Missing required option: --prompt\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageGptImage2Command(retryArgs({
+          prompt: parsed.prompt,
+          aspectRatio: parsed.aspectRatio,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image gpt-image-2 failed.'}\n`);
         return 1;
       }
     }
