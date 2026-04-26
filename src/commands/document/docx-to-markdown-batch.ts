@@ -1,7 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
+import { assertJobSucceeded } from '../../lib/job-errors.js';
+import {
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
+} from '../../lib/retry.js';
+import {
+  silentProgressReporter,
+  type ProgressReporter,
+} from '../../lib/progress-reporter.js';
 import { createZipBatchInput, type CreateZipBatchInputResult } from '../../lib/zip-batch-input.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
@@ -15,6 +26,7 @@ export interface DocumentDocxToMarkdownBatchCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface DocumentDocxToMarkdownBatchJobOutput {
@@ -48,6 +60,7 @@ export interface DocumentDocxToMarkdownBatchDependencies {
   writeFile: typeof writeFile;
   randomUUID: typeof randomUUID;
   rm: typeof rm;
+  progress: ProgressReporter;
 }
 
 type CreateJobResponse = {
@@ -67,6 +80,7 @@ function createDefaultDependencies(): DocumentDocxToMarkdownBatchDependencies {
     writeFile,
     randomUUID,
     rm,
+    progress: silentProgressReporter,
   };
 }
 
@@ -106,12 +120,8 @@ function getOutputFileId(job: DocumentDocxToMarkdownBatchJobResult): string | nu
     : null;
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
-  args: Pick<DocumentDocxToMarkdownBatchCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  args: Pick<DocumentDocxToMarkdownBatchCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
   dependencies: Pick<DocumentDocxToMarkdownBatchDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
@@ -119,11 +129,12 @@ async function downloadOutputFile(
     return;
   }
 
-  const response = await dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-    headers: {
-      authorization: `Bearer ${args.token}`,
-    },
-  });
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
+    onRetry: args.onRetry,
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download DOCX to Markdown batch output file ${outputFileId}.`);
@@ -148,18 +159,24 @@ export async function documentDocxToMarkdownBatchCommand(
   });
 
   try {
-    const sourceFile = await deps.uploadCommand({
+    deps.progress.uploadingInput();
+    const sourceFile = await deps.uploadCommand(withRetryHandler({
       input: zipInput.zipPath,
       baseUrl: args.baseUrl,
       token: args.token,
       configPath: args.configPath,
-    });
+      onRetry: args.onRetry,
+    }, args.onRetry));
+    deps.progress.uploadedFile(sourceFile.file_id);
 
+    deps.progress.creatingJob();
     const createJobResponse = await deps.apiRequest<CreateJobResponse>({
       baseUrl: args.baseUrl,
       token: args.token,
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: networkRetryOptions(args.onRetry),
       body: {
         tool_name: 'document.docx_to_markdown_bundle_batch',
         idempotency_key: deps.randomUUID(),
@@ -168,22 +185,34 @@ export async function documentDocxToMarkdownBatchCommand(
         },
       },
     });
+    const createdJob = createJobResponse.data.job;
+    deps.progress.createdJob(createdJob.id);
 
     const shouldWait = args.wait || Boolean(args.output);
 
     if (!shouldWait) {
-      return createJobResponse.data.job;
+      return createdJob;
     }
 
-    const job = isTerminalJobStatus(createJobResponse.data.job.status)
-      ? createJobResponse.data.job
-      : await deps.waitJobCommand({
-          jobId: createJobResponse.data.job.id,
+    deps.progress.waitingForJob();
+    deps.progress.jobStatus(createdJob.status);
+
+    const job = isTerminalJobStatus(createdJob.status)
+      ? createdJob
+      : await deps.waitJobCommand(withRetryHandler({
+          jobId: createdJob.id,
           baseUrl: args.baseUrl,
           token: args.token,
           timeoutSeconds: args.timeoutSeconds ?? 60,
           configPath: args.configPath,
-        });
+          onRetry: args.onRetry,
+          onStatus: (status) => {
+            deps.progress.jobStatus(status);
+          },
+        }, args.onRetry));
+    deps.progress.jobStatus(job.status);
+
+    assertJobSucceeded(job);
 
     if (args.output) {
       const outputFileId = getOutputFileId(job);
@@ -192,15 +221,18 @@ export async function documentDocxToMarkdownBatchCommand(
         throw new Error('The DOCX to Markdown batch job did not produce an output file.');
       }
 
+      deps.progress.downloadingOutput(outputFileId);
       await downloadOutputFile(
         {
           baseUrl: args.baseUrl,
-          token: args.token,
-          output: args.output,
-        },
+        token: args.token,
+        output: args.output,
+        onRetry: args.onRetry,
+      },
         outputFileId,
         deps,
       );
+      deps.progress.savedOutput(args.output);
     }
 
     return job;

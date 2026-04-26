@@ -1,7 +1,13 @@
 import { getJobCommand, type GetJobCommandArgs, type GetJobCommandResult } from './get.js';
+import {
+  extendedNetworkRetryOptions,
+  withRetry,
+} from '../../lib/retry.js';
+import { isCliError } from '../../lib/errors.js';
 
 export interface WaitJobCommandArgs extends GetJobCommandArgs {
   timeoutSeconds: number;
+  onStatus?: (status: string, job: GetJobCommandResult) => void;
 }
 
 export interface WaitJobDependencies {
@@ -33,6 +39,25 @@ function createTimeoutError(jobId: string, timeoutSeconds: number): Error {
   return new Error(`Timed out waiting for job ${jobId} after ${timeoutSeconds} seconds.`);
 }
 
+function isTimeoutError(error: unknown, jobId: string, timeoutSeconds: number): boolean {
+  return (
+    error instanceof Error &&
+    error.message === createTimeoutError(jobId, timeoutSeconds).message
+  );
+}
+
+function isRetryablePollingError(error: unknown, jobId: string, timeoutSeconds: number): boolean {
+  if (isTimeoutError(error, jobId, timeoutSeconds)) {
+    return false;
+  }
+
+  if (isCliError(error)) {
+    return error.status >= 500;
+  }
+
+  return true;
+}
+
 export async function waitJobCommand(
   args: WaitJobCommandArgs,
   dependencies: Partial<WaitJobDependencies> = {},
@@ -45,6 +70,8 @@ export async function waitJobCommand(
   const startedAt = deps.now();
   const timeoutMs = args.timeoutSeconds * 1000;
   const deadline = startedAt + timeoutMs;
+  const retry = extendedNetworkRetryOptions(args.onRetry);
+  let lastStatus: string | undefined;
 
   while (true) {
     const now = deps.now();
@@ -53,12 +80,41 @@ export async function waitJobCommand(
       throw createTimeoutError(args.jobId, args.timeoutSeconds);
     }
 
-    const job = await deps.getJob({
-      jobId: args.jobId,
-      baseUrl: args.baseUrl,
-      token: args.token,
-      configPath: args.configPath,
+    const job = await withRetry({
+      stage: 'Job polling failed',
+      attempts: retry.attempts,
+      delaysMs: retry.delaysMs,
+      onRetry: retry.onRetry,
+      sleep: async (ms) => {
+        const remainingMs = deadline - deps.now();
+
+        if (remainingMs <= 0) {
+          return;
+        }
+
+        await deps.sleep(Math.min(ms, remainingMs));
+      },
+      shouldRetry: (error) => isRetryablePollingError(error, args.jobId, args.timeoutSeconds),
+      fn: () => {
+        if (deps.now() >= deadline) {
+          throw createTimeoutError(args.jobId, args.timeoutSeconds);
+        }
+
+        return deps.getJob({
+          jobId: args.jobId,
+          baseUrl: args.baseUrl,
+          token: args.token,
+          configPath: args.configPath,
+          stage: 'Job polling failed',
+          retry: false,
+        });
+      },
     });
+
+    if (job.status !== lastStatus) {
+      lastStatus = job.status;
+      args.onStatus?.(job.status, job);
+    }
 
     if (isTerminalStatus(job.status)) {
       if (deps.now() >= deadline) {

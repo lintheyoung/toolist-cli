@@ -1,7 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 
+import { fetchFileDownloadResponse } from '../../lib/download.js';
 import { apiRequest } from '../../lib/http.js';
+import { assertJobSucceeded } from '../../lib/job-errors.js';
+import {
+  networkRetryOptions,
+  type RetryHandler,
+  withRetryHandler,
+} from '../../lib/retry.js';
+import {
+  silentProgressReporter,
+  type ProgressReporter,
+} from '../../lib/progress-reporter.js';
 import { uploadCommand } from '../files/upload.js';
 import { waitJobCommand } from '../jobs/wait.js';
 
@@ -13,6 +24,7 @@ export interface ImageRemoveWatermarkCommandArgs {
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface ImageRemoveWatermarkJobOutput {
@@ -67,6 +79,7 @@ export interface ImageRemoveWatermarkDependencies {
   fetch: typeof fetch;
   writeFile: typeof writeFile;
   randomUUID: typeof randomUUID;
+  progress: ProgressReporter;
 }
 
 type CreateJobResponse = {
@@ -84,15 +97,12 @@ function createDefaultDependencies(): ImageRemoveWatermarkDependencies {
     fetch: globalThis.fetch.bind(globalThis),
     writeFile,
     randomUUID,
+    progress: silentProgressReporter,
   };
 }
 
-function buildDownloadUrl(baseUrl: string, fileId: string): string {
-  return new URL(`/api/v1/files/${encodeURIComponent(fileId)}/download`, baseUrl).toString();
-}
-
 async function downloadOutputFile(
-  args: Pick<ImageRemoveWatermarkCommandArgs, 'baseUrl' | 'token' | 'output'>,
+  args: Pick<ImageRemoveWatermarkCommandArgs, 'baseUrl' | 'token' | 'output' | 'onRetry'>,
   outputFileId: string,
   dependencies: Pick<ImageRemoveWatermarkDependencies, 'fetch' | 'writeFile'>,
 ): Promise<void> {
@@ -100,11 +110,12 @@ async function downloadOutputFile(
     return;
   }
 
-  const response = await dependencies.fetch(buildDownloadUrl(args.baseUrl, outputFileId), {
-    headers: {
-      authorization: `Bearer ${args.token}`,
-    },
-  });
+  const response = await fetchFileDownloadResponse({
+    baseUrl: args.baseUrl,
+    token: args.token,
+    fileId: outputFileId,
+    onRetry: args.onRetry,
+  }, dependencies.fetch);
 
   if (!response.ok) {
     throw new Error(`Failed to download watermark-removed file ${outputFileId}.`);
@@ -123,18 +134,24 @@ export async function imageRemoveWatermarkCommand(
     ...dependencies,
   };
 
-  const sourceFile = await deps.uploadCommand({
+  deps.progress.uploadingInput();
+  const sourceFile = await deps.uploadCommand(withRetryHandler({
     input: args.input,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
-  });
+    onRetry: args.onRetry,
+  }, args.onRetry));
+  deps.progress.uploadedFile(sourceFile.file_id);
 
+  deps.progress.creatingJob();
   const createJobResponse = await deps.apiRequest<CreateJobResponse>({
     baseUrl: args.baseUrl,
     token: args.token,
     method: 'POST',
     path: '/api/v1/jobs',
+    stage: 'Create job request failed',
+    retry: networkRetryOptions(args.onRetry),
     body: {
       tool_name: 'image.gemini_nb_remove_watermark',
       idempotency_key: deps.randomUUID(),
@@ -143,22 +160,34 @@ export async function imageRemoveWatermarkCommand(
       },
     },
   });
+  const createdJob = createJobResponse.data.job;
+  deps.progress.createdJob(createdJob.id);
 
   const shouldWait = args.wait || Boolean(args.output);
 
   if (!shouldWait) {
-    return createJobResponse.data.job;
+    return createdJob;
   }
 
-  const job = isTerminalJobStatus(createJobResponse.data.job.status)
-    ? createJobResponse.data.job
-    : await deps.waitJobCommand({
-        jobId: createJobResponse.data.job.id,
+  deps.progress.waitingForJob();
+  deps.progress.jobStatus(createdJob.status);
+
+  const job = isTerminalJobStatus(createdJob.status)
+    ? createdJob
+    : await deps.waitJobCommand(withRetryHandler({
+        jobId: createdJob.id,
         baseUrl: args.baseUrl,
         token: args.token,
         timeoutSeconds: args.timeoutSeconds ?? 60,
         configPath: args.configPath,
-      });
+        onRetry: args.onRetry,
+        onStatus: (status) => {
+          deps.progress.jobStatus(status);
+        },
+      }, args.onRetry));
+  deps.progress.jobStatus(job.status);
+
+  assertJobSucceeded(job);
 
   if (args.output) {
     const outputFileId = getOutputFileId(job);
@@ -167,15 +196,18 @@ export async function imageRemoveWatermarkCommand(
       throw new Error('The watermark removal job did not produce an output file.');
     }
 
+    deps.progress.downloadingOutput(outputFileId);
     await downloadOutputFile(
       {
         baseUrl: args.baseUrl,
         token: args.token,
         output: args.output,
+        onRetry: args.onRetry,
       },
       outputFileId,
       deps,
     );
+    deps.progress.savedOutput(args.output);
   }
 
   return job;

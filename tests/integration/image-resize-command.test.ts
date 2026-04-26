@@ -83,6 +83,16 @@ describe('image resize command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.resize',
         execution_mode: 'sync',
@@ -201,6 +211,16 @@ describe('image resize command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.resize',
         idempotency_key: expect.any(String),
@@ -445,6 +465,16 @@ describe('image resize command', () => {
       token: 'saved_token_123',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'image.resize',
         input: {

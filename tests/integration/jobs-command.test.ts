@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.resetModules();
   vi.doUnmock('../../src/commands/jobs/get.js');
   vi.doUnmock('../../src/commands/jobs/wait.js');
@@ -102,6 +103,11 @@ describe('tools list command', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/v1/tools',
+      stage: 'List tools request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
     expect(result).toEqual({
       tools: [
@@ -158,6 +164,53 @@ describe('tools list command', () => {
       tools: [],
     });
     expect(result.stderr).toBe('');
+  });
+
+  it('retries transient tools list transport failures', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              tools: [
+                {
+                  name: 'image.convert_format',
+                  version: '2026-04-12',
+                  accepted_mime_types: ['image/jpeg'],
+                  max_file_size_bytes: 10_000_000,
+                },
+              ],
+            },
+            request_id: 'req_tools_retry',
+          }),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          },
+        ),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { createStderrRetryReporter } = await import('../../src/lib/retry.js');
+    const { listToolsCommand } = await import('../../src/commands/tools/list.js');
+    let stderr = '';
+
+    const result = await listToolsCommand({
+      baseUrl: 'https://api.example.com',
+      token: 'tgc_cli_secret',
+      onRetry: createStderrRetryReporter((chunk) => {
+        stderr += chunk;
+      }),
+    });
+
+    expect(result.tools).toHaveLength(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(stderr).toContain('List tools request failed: fetch failed\n');
+    expect(stderr).toContain('Retrying list tools request (1/4) in 1000ms...\n');
   });
 });
 
@@ -306,6 +359,11 @@ describe('jobs commands', () => {
       token: 'tgc_cli_secret',
       method: 'GET',
       path: '/api/v1/jobs/job_123',
+      stage: 'Get job request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
     });
     expect(result).toEqual({
       id: 'job_123',
@@ -416,6 +474,225 @@ describe('jobs commands', () => {
       toolName: 'image.convert_format',
       toolVersion: '2026-04-12',
     });
+  });
+
+  it('retries a transient polling failure and continues waiting', async () => {
+    const getJob = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({
+        id: 'job_123',
+        status: 'succeeded',
+        toolName: 'image.convert_format',
+        toolVersion: '2026-04-12',
+      });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result.status).toBe('succeeded');
+    expect(getJob).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('retries a transient polling 5xx API error and continues waiting', async () => {
+    const { CliError } = await import('../../src/lib/errors.js');
+    const getJob = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CliError({
+          code: 'INTERNAL_UNEXPECTED_ERROR',
+          message: 'Gateway unavailable.',
+          status: 503,
+          requestId: 'req_polling_503',
+        }),
+      )
+      .mockResolvedValueOnce({
+        id: 'job_123',
+        status: 'succeeded',
+        toolName: 'image.convert_format',
+        toolVersion: '2026-04-12',
+      });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result.status).toBe('succeeded');
+    expect(getJob).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(1000);
+  });
+
+  it('does not retry polling 4xx API errors', async () => {
+    const { CliError } = await import('../../src/lib/errors.js');
+    const getJob = vi.fn(async () => {
+      throw new CliError({
+        code: 'JOB_NOT_FOUND',
+        message: 'Job not found.',
+        status: 404,
+        requestId: 'req_polling_404',
+      });
+    });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 120,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => 0,
+        },
+      ),
+    ).rejects.toThrow('Job polling failed: Job not found.');
+    expect(getJob).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('adds polling stage context after retry exhaustion', async () => {
+    const getJob = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const sleep = vi.fn(async () => undefined);
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 120,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => 0,
+        },
+      ),
+    ).rejects.toThrow('Job polling failed: fetch failed');
+    expect(getJob).toHaveBeenCalledTimes(4);
+    expect(sleep).toHaveBeenCalledWith(1000);
+    expect(sleep).toHaveBeenCalledWith(3000);
+    expect(sleep).toHaveBeenCalledWith(7000);
+  });
+
+  it('caps polling retry delay to the remaining timeout', async () => {
+    const getJob = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    });
+    let currentTime = 0;
+    const sleep = vi.fn(async (ms: number) => {
+      currentTime += ms;
+    });
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+
+    await expect(
+      waitJobCommand(
+        {
+          jobId: 'job_123',
+          timeoutSeconds: 0.5,
+          baseUrl: 'https://api.example.com',
+          token: 'tgc_cli_secret',
+        },
+        {
+          getJob,
+          sleep,
+          now: () => currentTime,
+        },
+      ),
+    ).rejects.toThrow('Timed out waiting for job job_123 after 0.5 seconds.');
+    expect(sleep).toHaveBeenCalledWith(500);
+  });
+
+  it('notifies status changes once while waiting for a job', async () => {
+    const queuedJob = {
+      id: 'job_123',
+      status: 'queued',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const dispatchingJob = {
+      id: 'job_123',
+      status: 'dispatching',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const succeededJob = {
+      id: 'job_123',
+      status: 'succeeded',
+      toolName: 'image.convert_format',
+      toolVersion: '2026-04-12',
+    };
+    const getJob = vi
+      .fn()
+      .mockResolvedValueOnce(queuedJob)
+      .mockResolvedValueOnce(queuedJob)
+      .mockResolvedValueOnce(dispatchingJob)
+      .mockResolvedValueOnce(dispatchingJob)
+      .mockResolvedValueOnce(succeededJob);
+    const sleep = vi.fn(async () => undefined);
+    const onStatus = vi.fn();
+
+    const { waitJobCommand } = await import('../../src/commands/jobs/wait.js');
+    const result = await waitJobCommand(
+      {
+        jobId: 'job_123',
+        timeoutSeconds: 120,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        onStatus,
+      },
+      {
+        getJob,
+        sleep,
+        now: () => 0,
+      },
+    );
+
+    expect(result).toEqual(succeededJob);
+    expect(onStatus.mock.calls.map(([status]) => status)).toEqual([
+      'queued',
+      'dispatching',
+      'succeeded',
+    ]);
+    expect(onStatus).toHaveBeenNthCalledWith(1, 'queued', queuedJob);
+    expect(onStatus).toHaveBeenNthCalledWith(2, 'dispatching', dispatchingJob);
+    expect(onStatus).toHaveBeenNthCalledWith(3, 'succeeded', succeededJob);
   });
 
   it('times out if a job only becomes terminal after the deadline', async () => {

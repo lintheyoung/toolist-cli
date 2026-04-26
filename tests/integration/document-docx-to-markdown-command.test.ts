@@ -68,23 +68,45 @@ describe('document docx-to-markdown command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_docx_123',
-      status: 'succeeded',
-      toolName: 'document.docx_to_markdown_bundle',
-      toolVersion: '2026-04-19',
-      input: {
-        input_file_id: 'file_docx_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_docx_123',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('running', {
+          id: 'job_docx_123',
+          status: 'running',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_docx_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        });
+        return {
+          id: 'job_docx_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+          input: {
+            input_file_id: 'file_docx_source_123',
+          },
+          result: {
+            output: {
+              filename: 'bundle.zip',
+              outputFileId: 'file_docx_output_123',
+              mimeType: 'application/zip',
+              storageKey: 'ws/77/output/job_docx_123/bundle.zip',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          filename: 'bundle.zip',
-          outputFileId: 'file_docx_output_123',
-          mimeType: 'application/zip',
-          storageKey: 'ws/77/output/job_docx_123/bundle.zip',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -138,6 +160,16 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'document.docx_to_markdown_bundle',
         idempotency_key: expect.any(String),
@@ -152,6 +184,7 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_docx_output_123/download',
@@ -179,7 +212,109 @@ describe('document docx-to-markdown command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_docx_source_123',
+      'Creating job...',
+      'Created job: job_docx_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: running',
+      'Status: succeeded',
+      'Downloading output: file_docx_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('prints backend job failure details before checking the DOCX output bundle', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-docx-command-'));
+    const outputPath = join(tempDir, 'bundle.zip');
+
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_docx_source_123',
+      upload_url: 'https://upload.example.com/file_docx_source_123',
+      headers: {
+        'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      filename: 'document.docx',
+      mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size_bytes: 12,
+      file: {
+        fileId: 'file_docx_source_123',
+        status: 'uploaded',
+      },
+    }));
+
+    const waitJobCommand = vi.fn(async () => ({
+      id: 'job_docx_failed_402',
+      status: 'failed',
+      toolName: 'document.docx_to_markdown_bundle',
+      toolVersion: '2026-04-19',
+      errorCode: 'PROVIDER_REQUEST_FAILED',
+      errorMessage: 'Replicate request failed with status 402',
+      progress: {
+        externalTaskId: 'replicate_prediction_docx_123',
+        providerStatus: 'failed',
+      },
+    }));
+
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_docx_failed_402',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle',
+          toolVersion: '2026-04-19',
+        },
+      },
+      request_id: 'req_create_job_docx_failed_402',
+    }));
+
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({
+      uploadCommand,
+    }));
+    vi.doMock('../../src/commands/jobs/wait.js', () => ({
+      waitJobCommand,
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({
+      apiRequest,
+    }));
+
+    const result = await runCli([
+      'document',
+      'docx-to-markdown',
+      '--input',
+      '/tmp/document.docx',
+      '--wait',
+      '--output',
+      outputPath,
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('Uploading input...');
+    expect(result.stderr).toContain('Status: queued');
+    expect(result.stderr.indexOf('Status: failed')).toBeLessThan(
+      result.stderr.indexOf('Job failed: job_docx_failed_402'),
+    );
+    expect(result.stderr).toContain('Job failed: job_docx_failed_402');
+    expect(result.stderr).toContain('Status: failed');
+    expect(result.stderr).toContain('Error code: PROVIDER_REQUEST_FAILED');
+    expect(result.stderr).toContain('Error message: Replicate request failed with status 402');
+    expect(result.stderr).toContain('External task id: replicate_prediction_docx_123');
+    expect(result.stderr).toContain('Provider status: failed');
+    expect(result.stderr).not.toContain('did not produce an output file');
+    expect(fetch).not.toHaveBeenCalled();
 
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -238,6 +373,16 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'document.docx_to_markdown_bundle',
       }),
@@ -263,23 +408,45 @@ describe('document docx-to-markdown command', () => {
       },
     }));
 
-    const waitJobCommand = vi.fn(async () => ({
-      id: 'job_docx_batch_123',
-      status: 'succeeded',
-      toolName: 'document.docx_to_markdown_bundle_batch',
-      toolVersion: '2026-04-19',
-      input: {
-        input_file_id: 'file_docx_batch_source_123',
+    const waitJobCommand = vi.fn(
+      async (args: { onStatus?: (status: string, job: unknown) => void }) => {
+        args.onStatus?.('queued', {
+          id: 'job_docx_batch_123',
+          status: 'queued',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('dispatching', {
+          id: 'job_docx_batch_123',
+          status: 'dispatching',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        args.onStatus?.('succeeded', {
+          id: 'job_docx_batch_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+        });
+        return {
+          id: 'job_docx_batch_123',
+          status: 'succeeded',
+          toolName: 'document.docx_to_markdown_bundle_batch',
+          toolVersion: '2026-04-19',
+          input: {
+            input_file_id: 'file_docx_batch_source_123',
+          },
+          result: {
+            output: {
+              filename: 'results.zip',
+              outputFileId: 'file_docx_batch_output_123',
+              mimeType: 'application/zip',
+              storageKey: 'ws/77/output/job_docx_batch_123/results.zip',
+            },
+          },
+        };
       },
-      result: {
-        output: {
-          filename: 'results.zip',
-          outputFileId: 'file_docx_batch_output_123',
-          mimeType: 'application/zip',
-          storageKey: 'ws/77/output/job_docx_batch_123/results.zip',
-        },
-      },
-    }));
+    );
 
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -335,6 +502,16 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'document.docx_to_markdown_bundle_batch',
         idempotency_key: expect.any(String),
@@ -349,6 +526,7 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       timeoutSeconds: 60,
       configPath: undefined,
+      onStatus: expect.any(Function),
     });
     expect(fetch).toHaveBeenCalledWith(
       'https://api.example.com/api/v1/files/file_docx_batch_output_123/download',
@@ -376,7 +554,18 @@ describe('document docx-to-markdown command', () => {
         },
       },
     });
-    expect(result.stderr).toBe('');
+    expect(result.stderr.split('\n').filter(Boolean)).toEqual([
+      'Uploading input...',
+      'Uploaded file: file_docx_batch_source_123',
+      'Creating job...',
+      'Created job: job_docx_batch_123',
+      'Waiting for job...',
+      'Status: queued',
+      'Status: dispatching',
+      'Status: succeeded',
+      'Downloading output: file_docx_batch_output_123',
+      `Saved output: ${outputPath}`,
+    ]);
 
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -441,6 +630,16 @@ describe('document docx-to-markdown command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/jobs',
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
+      stage: 'Create job request failed',
+      retry: {
+        attempts: 3,
+        delaysMs: [1000, 3000],
+      },
       body: expect.objectContaining({
         tool_name: 'document.docx_to_markdown_bundle_batch',
         input: {

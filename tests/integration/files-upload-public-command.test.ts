@@ -140,6 +140,11 @@ describe('public files upload command', () => {
       token: 'tgc_cli_secret',
       method: 'POST',
       path: '/api/v1/files/create-upload',
+      stage: 'Create upload request failed',
+      retry: {
+        attempts: 4,
+        delaysMs: [1000, 3000, 7000],
+      },
       body: {
         filename: 'photo.jpg',
         mime_type: 'image/jpeg',

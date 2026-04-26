@@ -1,19 +1,25 @@
-import { stat, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { mkdir, stat, readFile, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { glob } from 'glob';
 
 import { uploadCommand } from '../files/upload.js';
+import { withRetryHandler, type RetryHandler } from '../../lib/retry.js';
 
 export interface MarkdownUploadImagesCommandArgs {
   input?: string;
   root?: string;
   glob?: string;
   inPlace: boolean;
+  outputDir?: string;
+  output?: string;
   public: true;
+  dryRun?: boolean;
+  skipMissing?: boolean;
   baseUrl: string;
   token: string;
   configPath?: string;
+  onRetry?: RetryHandler;
 }
 
 export interface MarkdownUploadImagesReplacement {
@@ -23,26 +29,47 @@ export interface MarkdownUploadImagesReplacement {
   file_id: string;
 }
 
+export interface MarkdownUploadImagesLocalImage {
+  kind: 'coverImage' | 'markdown_image';
+  from: string;
+  path: string;
+  exists: boolean;
+  would_upload: boolean;
+}
+
+export interface MarkdownUploadImagesMissingImage {
+  kind: 'coverImage' | 'markdown_image';
+  from: string;
+  path: string;
+}
+
 export interface MarkdownUploadImagesFileReport {
   path: string;
+  output_path?: string;
+  would_write_path?: string;
   changed: boolean;
   image_links_found: number;
   cover_image_found: boolean;
   uploaded: number;
   replacements: MarkdownUploadImagesReplacement[];
+  local_images: MarkdownUploadImagesLocalImage[];
+  missing: MarkdownUploadImagesMissingImage[];
 }
 
 export interface MarkdownUploadImagesReport {
+  dry_run: boolean;
   files: MarkdownUploadImagesFileReport[];
   total_files: number;
   total_changed: number;
   total_uploaded: number;
+  total_missing: number;
 }
 
 export interface MarkdownUploadImagesDependencies {
   uploadCommand: typeof uploadCommand;
   readFile: typeof readFile;
   writeFile: typeof writeFile;
+  mkdir: typeof mkdir;
   stat: typeof stat;
   glob: typeof glob;
 }
@@ -69,6 +96,11 @@ type UploadedImage = {
   publicUrl: string;
 };
 
+type LocalImageExistence = {
+  reference: LocalImageReference;
+  exists: boolean;
+};
+
 const MARKDOWN_IMAGE_PATTERN = /!\[[^\]\n]*\]\(([^)\n]+)\)/g;
 const DEFAULT_MARKDOWN_GLOB = '*.md';
 
@@ -77,6 +109,7 @@ function createDefaultDependencies(): MarkdownUploadImagesDependencies {
     uploadCommand,
     readFile,
     writeFile,
+    mkdir,
     stat,
     glob,
   };
@@ -316,19 +349,21 @@ async function scanMarkdownFile(
   };
 }
 
-async function validateLocalImages(
+async function collectLocalImageExistence(
   scannedFiles: ScannedMarkdownFile[],
   deps: Pick<MarkdownUploadImagesDependencies, 'stat'>,
-): Promise<void> {
-  const checkedPaths = new Set<string>();
+): Promise<Map<LocalImageReference, boolean>> {
+  const checkedPaths = new Map<string, boolean>();
+  const results = new Map<LocalImageReference, boolean>();
 
   for (const scannedFile of scannedFiles) {
     for (const reference of scannedFile.references) {
-      if (checkedPaths.has(reference.absolutePath)) {
+      const cached = checkedPaths.get(reference.absolutePath);
+
+      if (cached !== undefined) {
+        results.set(reference, cached);
         continue;
       }
-
-      checkedPaths.add(reference.absolutePath);
 
       try {
         const fileStats = await deps.stat(reference.absolutePath);
@@ -336,20 +371,116 @@ async function validateLocalImages(
         if (!fileStats.isFile()) {
           throw new Error(`Local image is not a file: ${reference.from} (referenced by ${scannedFile.path})`);
         }
+
+        checkedPaths.set(reference.absolutePath, true);
+        results.set(reference, true);
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
-          throw new Error(`Local image not found: ${reference.from} (referenced by ${scannedFile.path})`);
+          checkedPaths.set(reference.absolutePath, false);
+          results.set(reference, false);
+          continue;
         }
 
         throw error;
       }
     }
   }
+
+  return results;
+}
+
+function createLocalImageExistence(scannedFile: ScannedMarkdownFile, existence: Map<LocalImageReference, boolean>): LocalImageExistence[] {
+  return scannedFile.references.map((reference) => ({
+    reference,
+    exists: existence.get(reference) ?? false,
+  }));
+}
+
+function createLocalImageReport(localImages: LocalImageExistence[]): MarkdownUploadImagesLocalImage[] {
+  return localImages.map(({ reference, exists }) => ({
+    kind: reference.kind,
+    from: reference.from,
+    path: reference.absolutePath,
+    exists,
+    would_upload: exists,
+  }));
+}
+
+function createMissingImageReport(localImages: LocalImageExistence[]): MarkdownUploadImagesMissingImage[] {
+  return localImages
+    .filter(({ exists }) => !exists)
+    .map(({ reference }) => ({
+      kind: reference.kind,
+      from: reference.from,
+      path: reference.absolutePath,
+    }));
+}
+
+function throwIfMissingImages(scannedFiles: ScannedMarkdownFile[], existence: Map<LocalImageReference, boolean>): void {
+  for (const scannedFile of scannedFiles) {
+    for (const reference of scannedFile.references) {
+      if (!existence.get(reference)) {
+        throw new Error(`Local image not found: ${reference.from} (referenced by ${scannedFile.path})`);
+      }
+    }
+  }
+}
+
+function validateWriteTarget(args: Pick<MarkdownUploadImagesCommandArgs, 'input' | 'root' | 'inPlace' | 'outputDir' | 'output'>): void {
+  if (args.inPlace && args.outputDir) {
+    throw new Error('Pass either --in-place or --output-dir, not both.');
+  }
+
+  if (args.inPlace && args.output) {
+    throw new Error('Pass either --in-place or --output, not both.');
+  }
+
+  if (args.output && args.outputDir) {
+    throw new Error('Pass either --output or --output-dir, not both.');
+  }
+
+  if (args.output && !args.input) {
+    throw new Error('--output is only supported with --input.');
+  }
+
+  if (args.outputDir && !args.root) {
+    throw new Error('--output-dir is only supported with --root.');
+  }
+
+  if (!args.inPlace && !args.output && !args.outputDir) {
+    throw new Error('Missing write target: pass --in-place, --output, or --output-dir');
+  }
+}
+
+function resolveMarkdownOutputPath(scannedFile: ScannedMarkdownFile, args: MarkdownUploadImagesCommandArgs): string {
+  if (args.inPlace) {
+    return scannedFile.path;
+  }
+
+  if (args.output !== undefined) {
+    return resolve(args.output);
+  }
+
+  const rootPath = resolve(args.root!);
+  const outputDir = resolve(args.outputDir!);
+  const relativeMarkdownPath = relative(rootPath, scannedFile.path);
+
+  if (relativeMarkdownPath === '..' || relativeMarkdownPath.startsWith(`..${sep}`) || isAbsolute(relativeMarkdownPath)) {
+    throw new Error(`Markdown file is outside --root: ${scannedFile.path}`);
+  }
+
+  return resolve(outputDir, relativeMarkdownPath);
+}
+
+function assertOutputDoesNotOverwriteSource(outputPath: string, sourcePath: string): void {
+  if (resolve(outputPath) === resolve(sourcePath)) {
+    throw new Error(`Output path matches source Markdown. Use --in-place to overwrite source: ${sourcePath}`);
+  }
 }
 
 async function uploadImage(
   reference: LocalImageReference,
-  args: Pick<MarkdownUploadImagesCommandArgs, 'baseUrl' | 'token' | 'configPath'>,
+  args: Pick<MarkdownUploadImagesCommandArgs, 'baseUrl' | 'token' | 'configPath' | 'onRetry'>,
   deps: Pick<MarkdownUploadImagesDependencies, 'uploadCommand'>,
   cache: Map<string, UploadedImage>,
 ): Promise<{ image: UploadedImage; uploaded: boolean }> {
@@ -359,13 +490,14 @@ async function uploadImage(
     return { image: cached, uploaded: false };
   }
 
-  const result = await deps.uploadCommand({
+  const result = await deps.uploadCommand(withRetryHandler({
     input: reference.absolutePath,
     baseUrl: args.baseUrl,
     token: args.token,
     configPath: args.configPath,
     public: true,
-  });
+    onRetry: args.onRetry,
+  }, args.onRetry));
 
   if (!result.public_url) {
     throw new Error(`Upload did not return a public URL for ${reference.from}.`);
@@ -402,9 +534,7 @@ export async function markdownUploadImagesCommand(
     throw new Error('Missing required option: --input or --root');
   }
 
-  if (!args.inPlace) {
-    throw new Error('Missing required option: --in-place');
-  }
+  validateWriteTarget(args);
 
   if (!args.public) {
     throw new Error('Missing required option: --public');
@@ -416,19 +546,69 @@ export async function markdownUploadImagesCommand(
   };
   const markdownFiles = await listMarkdownFiles(args, deps);
   const scannedFiles = await Promise.all(markdownFiles.map((markdownPath) => scanMarkdownFile(markdownPath, deps)));
+  const outputPaths = new Map<ScannedMarkdownFile, string>();
 
-  await validateLocalImages(scannedFiles, deps);
+  for (const scannedFile of scannedFiles) {
+    const outputPath = resolveMarkdownOutputPath(scannedFile, args);
+
+    if (!args.inPlace) {
+      assertOutputDoesNotOverwriteSource(outputPath, scannedFile.path);
+    }
+
+    outputPaths.set(scannedFile, outputPath);
+  }
+
+  const imageExistence = await collectLocalImageExistence(scannedFiles, deps);
+
+  if (!args.dryRun && !args.skipMissing) {
+    throwIfMissingImages(scannedFiles, imageExistence);
+  }
+
+  if (args.dryRun) {
+    const reports = scannedFiles.map((scannedFile) => {
+      const localImages = createLocalImageExistence(scannedFile, imageExistence);
+      const missing = createMissingImageReport(localImages);
+      const writePath = outputPaths.get(scannedFile)!;
+
+      return {
+        path: scannedFile.path,
+        ...(!args.inPlace ? { would_write_path: writePath } : {}),
+        changed: false,
+        image_links_found: scannedFile.imageLinksFound,
+        cover_image_found: scannedFile.coverImageFound,
+        uploaded: 0,
+        replacements: [],
+        local_images: createLocalImageReport(localImages),
+        missing,
+      };
+    });
+
+    return {
+      dry_run: true,
+      files: reports,
+      total_files: reports.length,
+      total_changed: 0,
+      total_uploaded: 0,
+      total_missing: reports.reduce((total, file) => total + file.missing.length, 0),
+    };
+  }
 
   const uploadCache = new Map<string, UploadedImage>();
   const reports: MarkdownUploadImagesFileReport[] = [];
   let totalUploaded = 0;
 
   for (const scannedFile of scannedFiles) {
+    const localImages = createLocalImageExistence(scannedFile, imageExistence);
+    const missing = createMissingImageReport(localImages);
     const textReplacements: Array<{ start: number; end: number; to: string }> = [];
     const reportReplacements: MarkdownUploadImagesReplacement[] = [];
     let uploaded = 0;
 
-    for (const reference of scannedFile.references) {
+    for (const { reference, exists } of localImages) {
+      if (!exists) {
+        continue;
+      }
+
       const { image, uploaded: didUpload } = await uploadImage(reference, args, deps, uploadCache);
 
       if (didUpload) {
@@ -451,25 +631,32 @@ export async function markdownUploadImagesCommand(
 
     const updatedContent = applyReplacements(scannedFile.content, textReplacements);
     const changed = updatedContent !== scannedFile.content;
+    const outputPath = outputPaths.get(scannedFile)!;
 
-    if (changed) {
-      await deps.writeFile(scannedFile.path, updatedContent);
+    if (changed || !args.inPlace) {
+      await deps.mkdir(dirname(outputPath), { recursive: true });
+      await deps.writeFile(outputPath, updatedContent);
     }
 
     reports.push({
       path: scannedFile.path,
+      ...(!args.inPlace ? { output_path: outputPath } : {}),
       changed,
       image_links_found: scannedFile.imageLinksFound,
       cover_image_found: scannedFile.coverImageFound,
       uploaded,
       replacements: reportReplacements,
+      local_images: createLocalImageReport(localImages),
+      missing,
     });
   }
 
   return {
+    dry_run: false,
     files: reports,
     total_files: reports.length,
     total_changed: reports.filter((file) => file.changed).length,
     total_uploaded: totalUploaded,
+    total_missing: reports.reduce((total, file) => total + file.missing.length, 0),
   };
 }
