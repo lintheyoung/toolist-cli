@@ -8,6 +8,12 @@ import { apiRequest } from '../../lib/http.js';
 import type { ToolistEnvironment } from '../../lib/environments.js';
 import { assertJobSucceeded, JobFailureError } from '../../lib/job-errors.js';
 import {
+  DEFAULT_OUTPUT_FILE_ID_POLL_INTERVAL_MS,
+  DEFAULT_OUTPUT_FILE_ID_TIMEOUT_MS,
+  getJobOutputFileId,
+  waitForOutputFileId,
+} from '../../lib/job-output.js';
+import {
   networkRetryOptions,
   type RetryHandler,
   withRetryHandler,
@@ -35,6 +41,8 @@ export interface ImageRemoveWatermarkBatchCommandArgs {
   tuning?: ImageRemoveWatermarkBatchTuningInput;
   wait?: boolean;
   timeoutSeconds?: number;
+  outputFileIdTimeoutMs?: number;
+  outputFileIdPollIntervalMs?: number;
   output?: string;
   env?: ToolistEnvironment;
   baseUrl: string;
@@ -126,6 +134,7 @@ export interface ImageRemoveWatermarkBatchDependencies {
   randomUUID: typeof randomUUID;
   mkdtemp: typeof mkdtemp;
   rm: typeof rm;
+  sleep: (ms: number) => Promise<void>;
   progress: ProgressReporter;
 }
 
@@ -172,6 +181,10 @@ function createDefaultDependencies(): ImageRemoveWatermarkBatchDependencies {
     randomUUID,
     mkdtemp,
     rm,
+    sleep: (ms) =>
+      new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      }),
     progress: silentProgressReporter,
   };
 }
@@ -224,19 +237,7 @@ function isTerminalJobStatus(status: string): boolean {
 }
 
 function getOutputFileId(job: ImageRemoveWatermarkBatchJobResult): string | null {
-  if (!job.result || typeof job.result !== 'object') {
-    return null;
-  }
-
-  const output = (job.result as { output?: unknown }).output;
-
-  if (!output || typeof output !== 'object') {
-    return null;
-  }
-
-  return typeof (output as { outputFileId?: unknown }).outputFileId === 'string'
-    ? (output as { outputFileId: string }).outputFileId
-    : null;
+  return getJobOutputFileId(job);
 }
 
 function getRecord(value: unknown, key: string): Record<string, unknown> | undefined {
@@ -316,6 +317,37 @@ function formatChunkGenericFailure(
 
   lines.push(`Error message: ${error instanceof Error ? error.message : String(error)}`);
   return new ChunkFailureError(lines.join('\n'));
+}
+
+function formatJobSnippet(job: ImageRemoveWatermarkBatchJobResult): string {
+  const snippet = JSON.stringify({
+    id: job.id,
+    status: job.status,
+    result: job.result ?? null,
+  });
+
+  if (snippet.length <= 1200) {
+    return snippet;
+  }
+
+  return `${snippet.slice(0, 1200)}...`;
+}
+
+function formatMissingOutputFileIdFailure(
+  chunk: ImageRemoveWatermarkBatchInputChunk,
+  job: ImageRemoveWatermarkBatchJobResult,
+  timeoutMs: number,
+): ChunkFailureError {
+  return new ChunkFailureError(
+    [
+      `Chunk failed: ${chunk.index}`,
+      `Chunk input count: ${chunk.inputCount}`,
+      `Job failed: ${job.id}`,
+      `Status: ${job.status}`,
+      `Error message: Timed out waiting for outputFileId after ${Math.ceil(timeoutMs / 1000)} seconds.`,
+      `Final job detail: ${formatJobSnippet(job)}`,
+    ].join('\n'),
+  );
 }
 
 function buildCommandResult(
@@ -473,10 +505,24 @@ export async function imageRemoveWatermarkBatchCommand(
         };
 
         if (args.output) {
-          const outputFileId = getOutputFileId(job);
+          const outputFileIdTimeoutMs = args.outputFileIdTimeoutMs ?? DEFAULT_OUTPUT_FILE_ID_TIMEOUT_MS;
+          const { outputFileId, job: jobWithOutput } = await waitForOutputFileId({
+            job,
+            baseUrl: args.baseUrl,
+            token: args.token,
+            configPath: args.configPath,
+            timeoutMs: outputFileIdTimeoutMs,
+            pollIntervalMs: args.outputFileIdPollIntervalMs ?? DEFAULT_OUTPUT_FILE_ID_POLL_INTERVAL_MS,
+            onRetry: args.onRetry,
+          }, {
+            apiRequest: deps.apiRequest,
+            sleep: deps.sleep,
+          });
+          job = jobWithOutput;
+          completedChunk.job = job;
 
           if (!outputFileId) {
-            throw new Error('The watermark removal batch job did not produce an output file.');
+            throw formatMissingOutputFileIdFailure(chunk, job, outputFileIdTimeoutMs);
           }
 
           const chunkOutputPath = join(outputTempDir!, `chunk-${String(chunk.index).padStart(3, '0')}.zip`);

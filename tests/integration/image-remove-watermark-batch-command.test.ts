@@ -849,6 +849,354 @@ describe('image remove-watermark-batch command', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it('waits for outputFileId visibility before downloading a succeeded chunk output', async () => {
+    const { imageRemoveWatermarkBatchCommand } = await import(
+      '../../src/commands/image/remove-watermark-batch.js'
+    );
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'succeeded',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+            result: {
+              batch: {
+                summary: {
+                  processedFileCount: 1,
+                  skippedFileCount: 0,
+                },
+              },
+            },
+          },
+        },
+        request_id: 'req_get_job_no_output',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'succeeded',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+            result: {
+              output: {
+                filename: 'results.zip',
+                outputFileId: 'file_results_1',
+                mimeType: 'application/zip',
+              },
+              batch: {
+                summary: {
+                  processedFileCount: 1,
+                  skippedFileCount: 0,
+                },
+              },
+            },
+          },
+        },
+        request_id: 'req_get_job_with_output',
+      });
+    const fetch = vi.fn(async () => new Response(Buffer.from('zip'), { status: 200 }));
+    const sleep = vi.fn(async () => undefined);
+
+    const result = await imageRemoveWatermarkBatchCommand(
+      {
+        inputs: ['/tmp/a.jpg'],
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        wait: true,
+        output: '/tmp/results.zip',
+        outputFileIdTimeoutMs: 2,
+        outputFileIdPollIntervalMs: 1,
+      },
+      {
+        resolveZipBatchInputPaths: vi.fn(async () => ['/tmp/a.jpg']),
+        createZipBatchInput: vi.fn(async () => ({
+          zipPath: '/tmp/caller-owned/inputs.zip',
+          inputCount: 1,
+        })),
+        uploadCommand: vi.fn(async () => ({
+          file_id: 'file_batch_source_1',
+        })),
+        waitJobCommand: vi.fn(async () => ({
+          id: 'job_chunk_1',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark_batch',
+          toolVersion: '2026-04-15',
+          result: {
+            batch: {
+              summary: {
+                processedFileCount: 1,
+                skippedFileCount: 0,
+              },
+            },
+          },
+        })),
+        apiRequest,
+        fetch,
+        sleep,
+        writeFile: vi.fn(async () => undefined),
+        mkdtemp: vi.fn(async () => '/tmp/toollist-watermark-batch-output-test'),
+        rm: vi.fn(async () => undefined),
+        mergeChunkZipOutputs: vi.fn(async () => ({
+          processedFileCount: 1,
+          skippedFileCount: 0,
+        })),
+      },
+    );
+
+    expect(result.output).toBe('/tmp/results.zip');
+    expect(apiRequest).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      method: 'GET',
+      path: '/api/v1/jobs/job_chunk_1',
+      stage: 'Output file lookup failed',
+    }));
+    expect(apiRequest).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      method: 'GET',
+      path: '/api/v1/jobs/job_chunk_1',
+      stage: 'Output file lookup failed',
+    }));
+    expect(sleep).toHaveBeenCalledWith(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh job detail when the succeeded chunk already has outputFileId', async () => {
+    const { imageRemoveWatermarkBatchCommand } = await import(
+      '../../src/commands/image/remove-watermark-batch.js'
+    );
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_chunk_1',
+          status: 'queued',
+          toolName: 'image.gemini_nb_remove_watermark_batch',
+          toolVersion: '2026-04-15',
+        },
+      },
+      request_id: 'req_create_job_chunk_1',
+    }));
+
+    await imageRemoveWatermarkBatchCommand(
+      {
+        inputs: ['/tmp/a.jpg'],
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        wait: true,
+        output: '/tmp/results.zip',
+      },
+      {
+        resolveZipBatchInputPaths: vi.fn(async () => ['/tmp/a.jpg']),
+        createZipBatchInput: vi.fn(async () => ({
+          zipPath: '/tmp/caller-owned/inputs.zip',
+          inputCount: 1,
+        })),
+        uploadCommand: vi.fn(async () => ({
+          file_id: 'file_batch_source_1',
+        })),
+        waitJobCommand: vi.fn(async () => ({
+          id: 'job_chunk_1',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark_batch',
+          toolVersion: '2026-04-15',
+          result: {
+            output: {
+              filename: 'results.zip',
+              outputFileId: 'file_results_1',
+              mimeType: 'application/zip',
+            },
+          },
+        })),
+        apiRequest,
+        fetch: vi.fn(async () => new Response(Buffer.from('zip'), { status: 200 })),
+        writeFile: vi.fn(async () => undefined),
+        mkdtemp: vi.fn(async () => '/tmp/toollist-watermark-batch-output-test'),
+        rm: vi.fn(async () => undefined),
+        mergeChunkZipOutputs: vi.fn(async () => ({
+          processedFileCount: 1,
+          skippedFileCount: 0,
+        })),
+      },
+    );
+
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails with chunk and job detail when outputFileId never becomes visible', async () => {
+    const { imageRemoveWatermarkBatchCommand } = await import(
+      '../../src/commands/image/remove-watermark-batch.js'
+    );
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      })
+      .mockResolvedValue({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'succeeded',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+            result: {
+              batch: {
+                summary: {
+                  processedFileCount: 1,
+                  skippedFileCount: 0,
+                },
+              },
+            },
+          },
+        },
+        request_id: 'req_get_job_no_output',
+      });
+
+    await expect(imageRemoveWatermarkBatchCommand(
+      {
+        inputs: ['/tmp/a.jpg'],
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        wait: true,
+        output: '/tmp/results.zip',
+        outputFileIdTimeoutMs: 1,
+        outputFileIdPollIntervalMs: 1,
+      },
+      {
+        resolveZipBatchInputPaths: vi.fn(async () => ['/tmp/a.jpg']),
+        createZipBatchInput: vi.fn(async () => ({
+          zipPath: '/tmp/caller-owned/inputs.zip',
+          inputCount: 1,
+        })),
+        uploadCommand: vi.fn(async () => ({
+          file_id: 'file_batch_source_1',
+        })),
+        waitJobCommand: vi.fn(async () => ({
+          id: 'job_chunk_1',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark_batch',
+          toolVersion: '2026-04-15',
+          result: {
+            batch: {
+              summary: {
+                processedFileCount: 1,
+                skippedFileCount: 0,
+              },
+            },
+          },
+        })),
+        apiRequest,
+        sleep: vi.fn(async () => undefined),
+        mkdtemp: vi.fn(async () => '/tmp/toollist-watermark-batch-output-test'),
+        rm: vi.fn(async () => undefined),
+      },
+    )).rejects.toThrow(
+      /Chunk failed: 1[\s\S]*Job failed: job_chunk_1[\s\S]*Status: succeeded[\s\S]*Timed out waiting for outputFileId[\s\S]*"result"/,
+    );
+  });
+
+  it('retries transient errors while refreshing outputFileId visibility', async () => {
+    const { imageRemoveWatermarkBatchCommand } = await import(
+      '../../src/commands/image/remove-watermark-batch.js'
+    );
+    const retryEvents: string[] = [];
+    const apiRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'queued',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+          },
+        },
+        request_id: 'req_create_job_chunk_1',
+      })
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({
+        data: {
+          job: {
+            id: 'job_chunk_1',
+            status: 'succeeded',
+            toolName: 'image.gemini_nb_remove_watermark_batch',
+            toolVersion: '2026-04-15',
+            result: {
+              output: {
+                filename: 'results.zip',
+                outputFileId: 'file_results_1',
+                mimeType: 'application/zip',
+              },
+            },
+          },
+        },
+        request_id: 'req_get_job_with_output',
+      });
+
+    await imageRemoveWatermarkBatchCommand(
+      {
+        inputs: ['/tmp/a.jpg'],
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        wait: true,
+        output: '/tmp/results.zip',
+        outputFileIdTimeoutMs: 2,
+        outputFileIdPollIntervalMs: 1,
+        onRetry: (event) => {
+          retryEvents.push(`${event.stage}:${event.retryAttempt}/${event.maxAttempts}`);
+        },
+      },
+      {
+        resolveZipBatchInputPaths: vi.fn(async () => ['/tmp/a.jpg']),
+        createZipBatchInput: vi.fn(async () => ({
+          zipPath: '/tmp/caller-owned/inputs.zip',
+          inputCount: 1,
+        })),
+        uploadCommand: vi.fn(async () => ({
+          file_id: 'file_batch_source_1',
+        })),
+        waitJobCommand: vi.fn(async () => ({
+          id: 'job_chunk_1',
+          status: 'succeeded',
+          toolName: 'image.gemini_nb_remove_watermark_batch',
+          toolVersion: '2026-04-15',
+        })),
+        apiRequest,
+        fetch: vi.fn(async () => new Response(Buffer.from('zip'), { status: 200 })),
+        sleep: vi.fn(async () => undefined),
+        writeFile: vi.fn(async () => undefined),
+        mkdtemp: vi.fn(async () => '/tmp/toollist-watermark-batch-output-test'),
+        rm: vi.fn(async () => undefined),
+        mergeChunkZipOutputs: vi.fn(async () => ({
+          processedFileCount: 1,
+          skippedFileCount: 0,
+        })),
+      },
+    );
+
+    expect(apiRequest).toHaveBeenCalledTimes(3);
+    expect(retryEvents).toEqual(['Output file lookup failed:1/3']);
+  });
+
   it('only cleans up temp directories it created itself', async () => {
     const rmMock = vi.fn(async () => undefined);
     const { imageRemoveWatermarkBatchCommand } = await import(
