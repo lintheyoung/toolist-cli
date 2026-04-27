@@ -7,13 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTwitterWatchCommandHash, twitterWatchPollRemoteCommand, twitterWatchTrustCommand } from '../../src/commands/twitter/watch.js';
 
 const tweet = {
-  id: 'tweet_1',
-  url: 'https://x.com/alice/status/tweet_1',
-  text: 'hello from x',
-  author: {
-    userName: 'alice',
-  },
-  createdAt: '2026-04-27T01:02:03.000Z',
+  id: 'event_1',
+  tweetId: 'tweet_1',
+  tweetUrl: 'https://x.com/alice/status/tweet_1',
+  tweetText: 'hello from x',
+  authorUserName: 'alice',
+  tweetCreatedAt: '2026-04-27T01:02:03.000Z',
 };
 
 afterEach(() => {
@@ -113,8 +112,8 @@ describe('twitter watch command', () => {
       return {
         data: {
           watchId: 'watch_1',
-          baseline: true,
-          events: [tweet],
+          baselineEstablished: true,
+          events: [],
         },
       };
     });
@@ -133,17 +132,18 @@ describe('twitter watch command', () => {
 
     expect(apiRequest).toHaveBeenNthCalledWith(1, expect.objectContaining({
       method: 'GET',
-      path: '/api/cli/twitter/watch/remote',
+      path: '/api/v1/twitter-public-watches',
     }));
     expect(apiRequest).toHaveBeenNthCalledWith(2, expect.objectContaining({
       method: 'POST',
-      path: '/api/cli/twitter/watch/watch_1/poll',
+      path: '/api/v1/twitter-public-watches/watch_1/poll',
     }));
+    expect(apiRequest).toHaveBeenCalledTimes(2);
     expect(executeCommand).not.toHaveBeenCalled();
-    expect(result.watches[0]?.executions[0]).toEqual(expect.objectContaining({
-      tweetId: 'tweet_1',
-      status: 'baseline_skipped',
-      requires_trust: false,
+    expect(result.watches[0]).toEqual(expect.objectContaining({
+      baseline: true,
+      eventCount: 0,
+      executions: [],
     }));
   });
 
@@ -151,6 +151,9 @@ describe('twitter watch command', () => {
     const apiRequest = vi.fn(async (request) => {
       if (request.method === 'GET') {
         return { data: { watches: [{ id: 'watch_1', commandTemplate: 'echo {{tweet.id}}' }] } };
+      }
+      if (request.path.endsWith('/execution')) {
+        return { data: { ok: true } };
       }
       return { data: { watchId: 'watch_1', baseline: false, events: [tweet] } };
     });
@@ -175,6 +178,16 @@ describe('twitter watch command', () => {
       command: "echo 'tweet_1'",
     }));
     expect(result.totals.requires_trust).toBe(1);
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: '/api/v1/twitter-public-watches/events/event_1/execution',
+      body: {
+        status: 'skipped',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+      },
+    }));
   });
 
   it('renders variables, executes trusted commands, and reports success', async () => {
@@ -183,7 +196,7 @@ describe('twitter watch command', () => {
       if (request.method === 'GET') {
         return { data: { watches: [{ id: 'watch_1', commandTemplate }] } };
       }
-      if (request.path.endsWith('/executions')) {
+      if (request.path.endsWith('/execution')) {
         return { data: { ok: true } };
       }
       return { data: { watchId: 'watch_1', baseline: false, events: [tweet] } };
@@ -208,15 +221,13 @@ describe('twitter watch command', () => {
     expect(executeCommand).toHaveBeenCalledWith('printf "%s|%s|%s|%s|%s" \'tweet_1\' \'https://x.com/alice/status/tweet_1\' \'hello from x\' \'alice\' \'2026-04-27T01:02:03.000Z\'');
     expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
       method: 'POST',
-      path: '/api/cli/twitter/watch/watch_1/executions',
-      body: expect.objectContaining({
-        tweetId: 'tweet_1',
-        commandHash: createTwitterWatchCommandHash(commandTemplate),
+      path: '/api/v1/twitter-public-watches/events/event_1/execution',
+      body: {
         stdout: expect.stringContaining('tweet_1|https://x.com/alice/status/tweet_1'),
         stderr: '',
         exitCode: 0,
-        status: 'success',
-      }),
+        status: 'succeeded',
+      },
     }));
     expect(result.watches[0]?.executions[0]).toEqual(expect.objectContaining({
       status: 'success',
@@ -231,7 +242,7 @@ describe('twitter watch command', () => {
       if (request.method === 'GET') {
         return { data: { watches: [{ id: 'watch_1', commandTemplate }] } };
       }
-      if (request.path.endsWith('/executions')) {
+      if (request.path.endsWith('/execution')) {
         return { data: { ok: true } };
       }
       return { data: { watchId: 'watch_1', baseline: false, events: [tweet] } };
@@ -255,6 +266,16 @@ describe('twitter watch command', () => {
       stderr: 'nope',
     }));
     expect(result.totals.failed).toBe(1);
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'POST',
+      path: '/api/v1/twitter-public-watches/events/event_1/execution',
+      body: {
+        status: 'failed',
+        stdout: '',
+        stderr: 'nope',
+        exitCode: 2,
+      },
+    }));
   });
 
   it('trusts a watch command hash in a local trust file', async () => {

@@ -25,6 +25,7 @@ export interface TwitterWatchTrustCommandArgs {
 }
 
 export interface TwitterWatchTweetEvent {
+  eventId: string;
   id: string;
   url?: string;
   text?: string;
@@ -32,6 +33,8 @@ export interface TwitterWatchTweetEvent {
     userName?: string;
   };
   createdAt?: string;
+  commandTemplate?: string;
+  commandHash?: string;
 }
 
 interface RemoteTwitterWatch {
@@ -40,6 +43,7 @@ interface RemoteTwitterWatch {
 }
 
 export interface TwitterWatchExecutionSummary {
+  eventId: string;
   tweetId: string;
   tweetUrl?: string;
   commandHash: string;
@@ -93,6 +97,8 @@ interface ExecutedCommand {
   exitCode: number;
 }
 
+type GatewayExecutionStatus = 'succeeded' | 'failed' | 'skipped';
+
 type RemoteWatchesResponse = {
   data?: {
     watches?: unknown;
@@ -104,10 +110,12 @@ type PollWatchResponse = {
   data?: {
     watchId?: string;
     baseline?: boolean;
+    baselineEstablished?: boolean;
     events?: unknown;
   };
   watchId?: string;
   baseline?: boolean;
+  baselineEstablished?: boolean;
   events?: unknown;
 };
 
@@ -183,26 +191,32 @@ function normalizePollResponse(response: PollWatchResponse): {
       }
 
       const rawTweet = isRecord(event.tweet) ? event.tweet : event;
-      const id = getString(rawTweet.id);
+      const eventId = getString(event.id);
+      const id = getString(rawTweet.tweetId) ?? getString(rawTweet.id);
 
-      if (!id) {
+      if (!eventId || !id) {
         return [];
       }
 
       const author = isRecord(rawTweet.author) ? rawTweet.author : undefined;
 
       return [{
+        eventId,
         id,
-        url: getString(rawTweet.url),
-        text: getString(rawTweet.text),
-        author: author ? { userName: getString(author.userName) ?? getString(author.username) } : undefined,
-        createdAt: getString(rawTweet.createdAt) ?? getString(rawTweet.created_at),
+        url: getString(rawTweet.tweetUrl) ?? getString(rawTweet.url),
+        text: getString(rawTweet.tweetText) ?? getString(rawTweet.text),
+        author: {
+          userName: getString(rawTweet.authorUserName) ?? getString(author?.userName) ?? getString(author?.username),
+        },
+        createdAt: getString(rawTweet.tweetCreatedAt) ?? getString(rawTweet.createdAt) ?? getString(rawTweet.created_at),
+        commandTemplate: getString(rawTweet.commandTemplate),
+        commandHash: getString(rawTweet.commandHash),
       }];
     })
     : [];
 
   return {
-    baseline: data.baseline === true,
+    baseline: data.baseline === true || data.baselineEstablished === true,
     events,
   };
 }
@@ -227,6 +241,18 @@ function renderCommandTemplate(commandTemplate: string, tweet: TwitterWatchTweet
   return commandTemplate.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (match, key: string) => (
     Object.prototype.hasOwnProperty.call(replacements, key) ? shellQuote(replacements[key] ?? '') : match
   ));
+}
+
+function toGatewayExecutionStatus(status: TwitterWatchExecutionSummary['status']): GatewayExecutionStatus {
+  if (status === 'success') {
+    return 'succeeded';
+  }
+
+  if (status === 'failed') {
+    return 'failed';
+  }
+
+  return 'skipped';
 }
 
 async function executeLocalCommand(command: string): Promise<ExecutedCommand> {
@@ -309,7 +335,6 @@ async function reportExecution(args: {
   deps: TwitterWatchDependencies;
   baseUrl: string;
   token: string;
-  watchId: string;
   execution: TwitterWatchExecutionSummary;
   onRetry?: RetryHandler;
 }): Promise<void> {
@@ -317,16 +342,12 @@ async function reportExecution(args: {
     baseUrl: args.baseUrl,
     token: args.token,
     method: 'POST',
-    path: `/api/cli/twitter/watch/${encodeURIComponent(args.watchId)}/executions`,
+    path: `/api/v1/twitter-public-watches/events/${encodeURIComponent(args.execution.eventId)}/execution`,
     body: {
-      tweetId: args.execution.tweetId,
-      tweetUrl: args.execution.tweetUrl,
-      commandHash: args.execution.commandHash,
-      command: args.execution.command,
       stdout: args.execution.stdout ?? '',
       stderr: args.execution.stderr ?? '',
       exitCode: args.execution.exitCode ?? null,
-      status: args.execution.status,
+      status: toGatewayExecutionStatus(args.execution.status),
     },
     stage: 'Twitter watch execution report failed',
     retry: extendedNetworkRetryOptions(args.onRetry),
@@ -346,7 +367,7 @@ export async function twitterWatchPollRemoteCommand(
     baseUrl: args.baseUrl,
     token: args.token,
     method: 'GET',
-    path: '/api/cli/twitter/watch/remote',
+    path: '/api/v1/twitter-public-watches',
     stage: 'Twitter remote watches request failed',
     retry: extendedNetworkRetryOptions(args.onRetry),
   });
@@ -359,7 +380,7 @@ export async function twitterWatchPollRemoteCommand(
       baseUrl: args.baseUrl,
       token: args.token,
       method: 'POST',
-      path: `/api/cli/twitter/watch/${encodeURIComponent(watch.id)}/poll`,
+      path: `/api/v1/twitter-public-watches/${encodeURIComponent(watch.id)}/poll`,
       stage: 'Twitter watch poll request failed',
       retry: extendedNetworkRetryOptions(args.onRetry),
     });
@@ -367,8 +388,11 @@ export async function twitterWatchPollRemoteCommand(
     const executions: TwitterWatchExecutionSummary[] = [];
 
     for (const event of pollResult.events) {
-      const command = renderCommandTemplate(watch.commandTemplate, event);
+      const commandTemplate = event.commandTemplate ?? watch.commandTemplate;
+      const commandHash = event.commandHash ?? createTwitterWatchCommandHash(commandTemplate);
+      const command = renderCommandTemplate(commandTemplate, event);
       const baseExecution = {
+        eventId: event.eventId,
         tweetId: event.id,
         tweetUrl: event.url,
         commandHash,
@@ -376,19 +400,37 @@ export async function twitterWatchPollRemoteCommand(
       };
 
       if (pollResult.baseline) {
-        executions.push({
+        const execution: TwitterWatchExecutionSummary = {
           ...baseExecution,
           status: 'baseline_skipped',
           requires_trust: false,
+        };
+
+        executions.push(execution);
+        await reportExecution({
+          deps,
+          baseUrl: args.baseUrl,
+          token: args.token,
+          execution,
+          onRetry: args.onRetry,
         });
         continue;
       }
 
       if (!trustedCommands.has(trustEntryKey(watch.id, commandHash))) {
-        executions.push({
+        const execution: TwitterWatchExecutionSummary = {
           ...baseExecution,
           status: 'skipped_untrusted',
           requires_trust: true,
+        };
+
+        executions.push(execution);
+        await reportExecution({
+          deps,
+          baseUrl: args.baseUrl,
+          token: args.token,
+          execution,
+          onRetry: args.onRetry,
         });
         continue;
       }
@@ -408,7 +450,6 @@ export async function twitterWatchPollRemoteCommand(
         deps,
         baseUrl: args.baseUrl,
         token: args.token,
-        watchId: watch.id,
         execution,
         onRetry: args.onRetry,
       });
