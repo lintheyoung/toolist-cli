@@ -27,6 +27,10 @@ import { uploadCommand } from './commands/files/upload.js';
 import { getJobCommand } from './commands/jobs/get.js';
 import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
+import {
+  twitterWatchPollRemoteCommand,
+  twitterWatchTrustCommand,
+} from './commands/twitter/watch.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
@@ -233,6 +237,7 @@ export function getRootHelp(): string {
     '  logout   Clear local credentials',
     '  whoami   Show the current identity',
     '  tools    Low-level tool registry commands',
+    '  twitter  Twitter watch automation commands',
     '  files    Low-level file commands',
     '  markdown Markdown content commands',
     '  document High-level document commands',
@@ -250,6 +255,64 @@ export function getRootHelp(): string {
     '  -h, --help  Show help',
     ENVIRONMENT_OPTION_HELP,
     '  --json      Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterHelp(): string {
+  return [
+    'toollist twitter',
+    '',
+    'Usage:',
+    '  toollist twitter watch <command>',
+    '',
+    'Commands:',
+    '  watch  Twitter public watch commands',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchHelp(): string {
+  return [
+    'toollist twitter watch',
+    '',
+    'Usage:',
+    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  poll   Pull remote watches, poll Gateway, and execute trusted local commands',
+    '  trust  Trust a watch command hash for local execution',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchPollHelp(): string {
+  return [
+    'toollist twitter watch poll',
+    '',
+    'Usage:',
+    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --remote       Load enabled watches from Toolist Web',
+    '  --once         Poll once and exit',
+    ENVIRONMENT_OPTION_HELP,
+    '  --base-url     API base URL for custom environments',
+    '  --token        API access token',
+    '  --config-path  Config file path',
+    '  --json         Emit JSON summary',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchTrustHelp(): string {
+  return [
+    'toollist twitter watch trust',
+    '',
+    'Usage:',
+    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --command-hash  Command template hash printed by poll output',
+    '  --config-path   Config file path',
+    '  --json          Emit JSON summary',
   ].join('\n') + '\n';
 }
 
@@ -823,6 +886,154 @@ function parseApiArgs(args: string[], strict = false): SharedApiArgs {
     if (strict) {
       unexpectedPositional(arg);
     }
+  }
+
+  return parsed;
+}
+
+function parseTwitterWatchPollArgs(args: string[]): SharedApiArgs & {
+  remote?: boolean;
+  once?: boolean;
+} {
+  const parsed: SharedApiArgs & {
+    remote?: boolean;
+    once?: boolean;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--remote') {
+      parsed.remote = true;
+      continue;
+    }
+
+    if (flag === '--once') {
+      parsed.once = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseTwitterWatchTrustArgs(args: string[]): {
+  watchId?: string;
+  commandHash?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    watchId?: string;
+    commandHash?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--command-hash') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.commandHash = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    if (parsed.watchId) {
+      unexpectedPositional(arg);
+    }
+
+    parsed.watchId = arg;
   }
 
   return parsed;
@@ -3324,6 +3535,91 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Tools list failed.'}\n`);
         return 1;
+      }
+    }
+  }
+
+  if (command === 'twitter') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getTwitterHelp());
+      return 0;
+    }
+
+    if (subcommand === 'watch') {
+      const [watchSubcommand, ...watchArgs] = commandArgs;
+
+      if (!watchSubcommand || watchSubcommand === '--help' || watchSubcommand === '-h' || watchSubcommand === 'help') {
+        io.stdout(getTwitterWatchHelp());
+        return 0;
+      }
+
+      if (watchSubcommand === 'poll') {
+        if (watchArgs.includes('--help') || watchArgs.includes('-h')) {
+          io.stdout(getTwitterWatchPollHelp());
+          return 0;
+        }
+
+        try {
+          const parsed = parseTwitterWatchPollArgs(watchArgs);
+
+          if (!parsed.remote) {
+            io.stderr('Missing required option: --remote\n');
+            return 1;
+          }
+
+          if (!parsed.once) {
+            io.stderr('Missing required option: --once\n');
+            return 1;
+          }
+
+          const credentials = await resolveApiCredentials(parsed);
+          const result = await twitterWatchPollRemoteCommand(retryArgs({
+            ...credentials,
+            configPath: parsed.configPath,
+            remote: true,
+            once: true,
+            onRetry,
+          }));
+          io.stdout(`${JSON.stringify(result)}\n`);
+          return 0;
+        } catch (error) {
+          io.stderr(`${error instanceof Error ? error.message : 'Twitter watch poll failed.'}\n`);
+          return 1;
+        }
+      }
+
+      if (watchSubcommand === 'trust') {
+        if (watchArgs.includes('--help') || watchArgs.includes('-h')) {
+          io.stdout(getTwitterWatchTrustHelp());
+          return 0;
+        }
+
+        try {
+          const parsed = parseTwitterWatchTrustArgs(watchArgs);
+
+          if (!parsed.watchId) {
+            io.stderr('Missing required argument: watch-id\n');
+            return 1;
+          }
+
+          if (!parsed.commandHash) {
+            io.stderr('Missing required option: --command-hash\n');
+            return 1;
+          }
+
+          const result = await twitterWatchTrustCommand({
+            watchId: parsed.watchId,
+            commandHash: parsed.commandHash,
+            configPath: parsed.configPath,
+          });
+          io.stdout(`${JSON.stringify(result)}\n`);
+          return 0;
+        } catch (error) {
+          io.stderr(`${error instanceof Error ? error.message : 'Twitter watch trust failed.'}\n`);
+          return 1;
+        }
       }
     }
   }
