@@ -919,7 +919,7 @@ describe('image remove-watermark-batch command', () => {
         token: 'tgc_cli_secret',
         wait: true,
         output: '/tmp/results.zip',
-        outputFileIdTimeoutMs: 2,
+        outputFileIdTimeoutMs: 1_000,
         outputFileIdPollIntervalMs: 1,
       },
       {
@@ -1159,7 +1159,7 @@ describe('image remove-watermark-batch command', () => {
         token: 'tgc_cli_secret',
         wait: true,
         output: '/tmp/results.zip',
-        outputFileIdTimeoutMs: 2,
+        outputFileIdTimeoutMs: 1_000,
         outputFileIdPollIntervalMs: 1,
         onRetry: (event) => {
           retryEvents.push(`${event.stage}:${event.retryAttempt}/${event.maxAttempts}`);
