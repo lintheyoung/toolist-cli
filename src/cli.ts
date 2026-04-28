@@ -10,6 +10,7 @@ import { imageConvertBatchCommand } from './commands/image/convert-batch.js';
 import { imageConvertCommand } from './commands/image/convert.js';
 import { imageCropBatchCommand } from './commands/image/crop-batch.js';
 import { imageCropCommand } from './commands/image/crop.js';
+import { imageGptImage2Command } from './commands/image/gpt-image-2.js';
 import { imageRemoveBackgroundCommand } from './commands/image/remove-background.js';
 import { imageRemoveWatermarkCommand } from './commands/image/remove-watermark.js';
 import {
@@ -26,6 +27,10 @@ import { uploadCommand } from './commands/files/upload.js';
 import { getJobCommand } from './commands/jobs/get.js';
 import { waitJobCommand } from './commands/jobs/wait.js';
 import { listToolsCommand } from './commands/tools/list.js';
+import {
+  twitterWatchPollRemoteCommand,
+  twitterWatchTrustCommand,
+} from './commands/twitter/watch.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
@@ -232,6 +237,7 @@ export function getRootHelp(): string {
     '  logout   Clear local credentials',
     '  whoami   Show the current identity',
     '  tools    Low-level tool registry commands',
+    '  twitter  Twitter watch automation commands',
     '  files    Low-level file commands',
     '  markdown Markdown content commands',
     '  document High-level document commands',
@@ -242,12 +248,71 @@ export function getRootHelp(): string {
     '',
     'Discover supported tools:',
     '  toollist tools list',
+    '  toollist image gpt-image-2 --prompt "Create a clean square app icon..." --wait --output icon.png',
     '  toollist image remove-background --input photo.png --wait --output photo-background-removed.png',
     '',
     'Options:',
     '  -h, --help  Show help',
     ENVIRONMENT_OPTION_HELP,
     '  --json      Emit JSON output explicitly (default behavior)',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterHelp(): string {
+  return [
+    'toollist twitter',
+    '',
+    'Usage:',
+    '  toollist twitter watch <command>',
+    '',
+    'Commands:',
+    '  watch  Twitter public watch commands',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchHelp(): string {
+  return [
+    'toollist twitter watch',
+    '',
+    'Usage:',
+    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  poll   Pull remote watches, poll Gateway, and execute trusted local commands',
+    '  trust  Trust a watch command hash for local execution',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchPollHelp(): string {
+  return [
+    'toollist twitter watch poll',
+    '',
+    'Usage:',
+    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --remote       Load enabled watches from Toolist Web',
+    '  --once         Poll once and exit',
+    ENVIRONMENT_OPTION_HELP,
+    '  --base-url     API base URL for custom environments',
+    '  --token        API access token',
+    '  --config-path  Config file path',
+    '  --json         Emit JSON summary',
+  ].join('\n') + '\n';
+}
+
+export function getTwitterWatchTrustHelp(): string {
+  return [
+    'toollist twitter watch trust',
+    '',
+    'Usage:',
+    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --command-hash  Command template hash printed by poll output',
+    '  --config-path   Config file path',
+    '  --json          Emit JSON summary',
   ].join('\n') + '\n';
 }
 
@@ -393,6 +458,7 @@ export function getImageHelp(): string {
     '',
     'Usage:',
     '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
@@ -404,6 +470,7 @@ export function getImageHelp(): string {
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
+    '  gpt-image-2  Generate an image with Kie GPT Image 2 through the API',
     '  convert-batch  Convert multiple images through the batch wrapper',
     '  remove-background  Remove the background from an image through the API',
     '  remove-watermark  Remove a watermark from an image through the API',
@@ -412,6 +479,29 @@ export function getImageHelp(): string {
     '  resize-batch  Resize multiple images through the batch wrapper',
     '  crop-batch  Crop multiple images through the batch wrapper',
     '  crop     Crop an image through the API',
+  ].join('\n') + '\n';
+}
+
+export function getImageGptImage2Help(): string {
+  return [
+    'toollist image gpt-image-2',
+    '',
+    `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
+    '',
+    'Usage:',
+    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --prompt       Text prompt for image generation',
+    '  --aspect-ratio Aspect ratio, for example auto, 1:1, 16:9, or 9:16',
+    '  --wait         Wait for the generation job to finish',
+    '  --timeout      Maximum wait time in seconds',
+    '  --output       Download generated image to a local path',
+    `  --base-url     API base URL (defaults to ${DEFAULT_BASE_URL})`,
+    ENVIRONMENT_OPTION_HELP,
+    '  --token        API access token',
+    '  --config-path  Path to saved CLI config',
+    '  --json         Emit JSON output explicitly (default behavior)',
   ].join('\n') + '\n';
 }
 
@@ -796,6 +886,154 @@ function parseApiArgs(args: string[], strict = false): SharedApiArgs {
     if (strict) {
       unexpectedPositional(arg);
     }
+  }
+
+  return parsed;
+}
+
+function parseTwitterWatchPollArgs(args: string[]): SharedApiArgs & {
+  remote?: boolean;
+  once?: boolean;
+} {
+  const parsed: SharedApiArgs & {
+    remote?: boolean;
+    once?: boolean;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--remote') {
+      parsed.remote = true;
+      continue;
+    }
+
+    if (flag === '--once') {
+      parsed.once = true;
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseTwitterWatchTrustArgs(args: string[]): {
+  watchId?: string;
+  commandHash?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    watchId?: string;
+    commandHash?: string;
+    configPath?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--command-hash') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.commandHash = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    if (parsed.watchId) {
+      unexpectedPositional(arg);
+    }
+
+    parsed.watchId = arg;
   }
 
   return parsed;
@@ -1678,6 +1916,148 @@ function parseZipJobBatchArgs(args: string[], options: {
 
 const parseDocumentDocxToMarkdownArgs = parseImageRemoveWatermarkArgs;
 const parseImageRemoveBackgroundArgs = parseImageRemoveWatermarkArgs;
+
+function parseImageGptImage2Args(args: string[]): {
+  prompt?: string;
+  aspectRatio?: string;
+  wait?: boolean;
+  timeoutSeconds?: number;
+  output?: string;
+  baseUrl?: string;
+  env?: ToolistEnvironment;
+  token?: string;
+  configPath?: string;
+} {
+  const parsed: {
+    prompt?: string;
+    aspectRatio?: string;
+    wait?: boolean;
+    timeoutSeconds?: number;
+    output?: string;
+    baseUrl?: string;
+    env?: ToolistEnvironment;
+    token?: string;
+    configPath?: string;
+  } = {
+    ...parseApiArgs(args),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--prompt') {
+      const promptValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty prompt');
+      parsed.prompt = promptValue.value;
+      if (consumeNext || promptValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--aspect-ratio') {
+      const aspectRatioValue = parseNonEmptyStringOption(flag, rawValue, args, index, 'a non-empty aspect ratio');
+      parsed.aspectRatio = aspectRatioValue.value;
+      if (consumeNext || aspectRatioValue.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--wait') {
+      parsed.wait = true;
+      continue;
+    }
+
+    if (flag === '--timeout') {
+      const timeoutValue = Number(value ?? rawValue);
+
+      if (!Number.isFinite(timeoutValue) || timeoutValue <= 0) {
+        throw new Error('Invalid value for --timeout.');
+      }
+
+      parsed.timeoutSeconds = timeoutValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--output') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.output = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
 
 function parseImageRemoveWatermarkBatchArgs(args: string[]): ReturnType<typeof parseZipJobBatchArgs> {
   return parseZipJobBatchArgs(args, {
@@ -3159,6 +3539,91 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
     }
   }
 
+  if (command === 'twitter') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getTwitterHelp());
+      return 0;
+    }
+
+    if (subcommand === 'watch') {
+      const [watchSubcommand, ...watchArgs] = commandArgs;
+
+      if (!watchSubcommand || watchSubcommand === '--help' || watchSubcommand === '-h' || watchSubcommand === 'help') {
+        io.stdout(getTwitterWatchHelp());
+        return 0;
+      }
+
+      if (watchSubcommand === 'poll') {
+        if (watchArgs.includes('--help') || watchArgs.includes('-h')) {
+          io.stdout(getTwitterWatchPollHelp());
+          return 0;
+        }
+
+        try {
+          const parsed = parseTwitterWatchPollArgs(watchArgs);
+
+          if (!parsed.remote) {
+            io.stderr('Missing required option: --remote\n');
+            return 1;
+          }
+
+          if (!parsed.once) {
+            io.stderr('Missing required option: --once\n');
+            return 1;
+          }
+
+          const credentials = await resolveApiCredentials(parsed);
+          const result = await twitterWatchPollRemoteCommand(retryArgs({
+            ...credentials,
+            configPath: parsed.configPath,
+            remote: true,
+            once: true,
+            onRetry,
+          }));
+          io.stdout(`${JSON.stringify(result)}\n`);
+          return 0;
+        } catch (error) {
+          io.stderr(`${error instanceof Error ? error.message : 'Twitter watch poll failed.'}\n`);
+          return 1;
+        }
+      }
+
+      if (watchSubcommand === 'trust') {
+        if (watchArgs.includes('--help') || watchArgs.includes('-h')) {
+          io.stdout(getTwitterWatchTrustHelp());
+          return 0;
+        }
+
+        try {
+          const parsed = parseTwitterWatchTrustArgs(watchArgs);
+
+          if (!parsed.watchId) {
+            io.stderr('Missing required argument: watch-id\n');
+            return 1;
+          }
+
+          if (!parsed.commandHash) {
+            io.stderr('Missing required option: --command-hash\n');
+            return 1;
+          }
+
+          const result = await twitterWatchTrustCommand({
+            watchId: parsed.watchId,
+            commandHash: parsed.commandHash,
+            configPath: parsed.configPath,
+          });
+          io.stdout(`${JSON.stringify(result)}\n`);
+          return 0;
+        } catch (error) {
+          io.stderr(`${error instanceof Error ? error.message : 'Twitter watch trust failed.'}\n`);
+          return 1;
+        }
+      }
+    }
+  }
+
   if (command === 'files') {
     const [subcommand, ...commandArgs] = rest;
 
@@ -3398,6 +3863,11 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
       return 0;
     }
 
+    if (subcommand === 'gpt-image-2' && (commandArgs[0] === '--help' || commandArgs[0] === '-h' || commandArgs[0] === 'help')) {
+      io.stdout(getImageGptImage2Help());
+      return 0;
+    }
+
     if (subcommand === 'convert') {
       try {
         const parsed = parseImageConvertArgs(commandArgs);
@@ -3485,6 +3955,36 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         return 0;
       } catch (error) {
         io.stderr(`${error instanceof Error ? error.message : 'Image remove-background failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'gpt-image-2') {
+      try {
+        const parsed = parseImageGptImage2Args(commandArgs);
+
+        if (!parsed.prompt) {
+          io.stderr('Missing required option: --prompt\n');
+          return 1;
+        }
+
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await imageGptImage2Command(retryArgs({
+          prompt: parsed.prompt,
+          aspectRatio: parsed.aspectRatio,
+          wait: parsed.wait,
+          timeoutSeconds: parsed.timeoutSeconds,
+          output: parsed.output,
+          ...credentials,
+          configPath: parsed.configPath,
+          onRetry,
+        }), {
+          progress: createStderrProgressReporter(io.stderr),
+        });
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'Image gpt-image-2 failed.'}\n`);
         return 1;
       }
     }
