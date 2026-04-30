@@ -272,6 +272,57 @@ describe('image resize command', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('maps --compress balanced to quality 75 for image resize', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: { 'content-type': 'image/png' },
+      filename: 'demo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: { fileId: 'file_source_123', status: 'uploaded' },
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_resize_123',
+          status: 'queued',
+          toolName: 'image.resize',
+          toolVersion: '2026-04-13',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({ uploadCommand }));
+    vi.doMock('../../src/lib/http.js', () => ({ apiRequest }));
+
+    const result = await runCli([
+      'image',
+      'resize',
+      '--input',
+      '/tmp/demo.png',
+      '--width',
+      '640',
+      '--to',
+      'webp',
+      '--compress',
+      'balanced',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        input: expect.objectContaining({ quality: 75 }),
+      }),
+    }));
+  });
+
   it('skips jobs wait when a sync resize create response is already terminal', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo-sync-resized.webp');

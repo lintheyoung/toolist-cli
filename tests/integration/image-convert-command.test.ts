@@ -362,6 +362,141 @@ describe('image convert command', () => {
     expect(result.stderr).toBe('');
   });
 
+  it('maps --compress smallest to quality 35 for image convert', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: { 'content-type': 'image/png' },
+      filename: 'demo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: { fileId: 'file_source_123', status: 'uploaded' },
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_123',
+          status: 'queued',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({ uploadCommand }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({ apiRequest }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/demo.png',
+      '--to',
+      'webp',
+      '--compress',
+      'smallest',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        input: {
+          input_file_id: 'file_source_123',
+          target_mime_type: 'image/webp',
+          quality: 35,
+        },
+      }),
+    }));
+  });
+
+  it('keeps explicit --quality ahead of --compress for image convert', async () => {
+    const uploadCommand = vi.fn(async () => ({
+      file_id: 'file_source_123',
+      upload_url: 'https://upload.example.com/file_source_123',
+      headers: { 'content-type': 'image/png' },
+      filename: 'demo.png',
+      mime_type: 'image/png',
+      size_bytes: 12,
+      file: { fileId: 'file_source_123', status: 'uploaded' },
+    }));
+    const apiRequest = vi.fn(async () => ({
+      data: {
+        job: {
+          id: 'job_123',
+          status: 'queued',
+          toolName: 'image.convert_format',
+          toolVersion: '2026-04-12',
+        },
+      },
+      request_id: 'req_create_job_123',
+    }));
+
+    vi.doMock('../../src/commands/files/upload.js', () => ({ uploadCommand }));
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
+    vi.doMock('../../src/lib/http.js', () => ({ apiRequest }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/demo.png',
+      '--to',
+      'webp',
+      '--quality',
+      '60',
+      '--compress',
+      'smallest',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(apiRequest).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        input: expect.objectContaining({ quality: 60 }),
+      }),
+    }));
+  });
+
+  it('rejects invalid image convert compression presets locally before uploading', async () => {
+    const uploadCommand = vi.fn();
+    vi.doMock('../../src/commands/files/upload.js', () => ({ uploadCommand }));
+
+    const result = await runCli([
+      'image',
+      'convert',
+      '--input',
+      '/tmp/demo.png',
+      '--to',
+      'webp',
+      '--compress',
+      'tiny',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe('Invalid value for --compress.\n');
+    expect(uploadCommand).not.toHaveBeenCalled();
+  });
+
   it('skips jobs wait when a sync create response is already terminal', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'toollist-cli-'));
     const outputPath = join(tempDir, 'photo-sync.webp');
