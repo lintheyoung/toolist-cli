@@ -97,7 +97,7 @@ describe('image crop-batch command', () => {
       width: 640,
       height: 480,
       to: 'webp',
-      quality: undefined,
+      quality: 55,
       concurrency: 2,
       wait: true,
       outputDir: '/tmp/outputs',

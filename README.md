@@ -88,6 +88,7 @@ Image conversion, resize, and crop commands also support compression presets:
 - `--compress balanced` maps to `quality: 75`
 - `--compress small` maps to `quality: 55`
 - `--compress smallest` maps to `quality: 35`
+- `--to webp` defaults to `--compress small` when neither `--quality` nor `--compress` is provided.
 - Explicit `--quality` takes precedence when both options are provided.
 
 Recommended article image conversion:

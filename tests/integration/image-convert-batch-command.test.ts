@@ -197,7 +197,7 @@ describe('image convert-batch command', () => {
       inputs: ['/tmp/photo-a.jpg'],
       inputGlob: undefined,
       to: 'webp',
-      quality: undefined,
+      quality: 55,
       concurrency: undefined,
       wait: undefined,
       outputDir: undefined,
