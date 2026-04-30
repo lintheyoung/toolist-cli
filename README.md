@@ -79,7 +79,27 @@ After logging in, commands reuse the saved login automatically. You only need
 Run a high-level image conversion:
 
 ```bash
-npx toolist-cli@latest image convert --input ./photo.jpg --to webp --sync --wait
+npx toolist-cli@latest image convert --input ./photo.jpg --to webp --compress smallest --sync --wait
+```
+
+
+Image conversion, resize, and crop commands also support compression presets:
+
+- `--compress balanced` maps to `quality: 75`
+- `--compress small` maps to `quality: 55`
+- `--compress smallest` maps to `quality: 35`
+- Explicit `--quality` takes precedence when both options are provided.
+
+Recommended article image conversion:
+
+```bash
+npx toolist-cli@latest image convert --input ./demo.png --to webp --compress smallest --sync --wait --output ./demo.webp
+```
+
+Batch conversion:
+
+```bash
+npx toolist-cli@latest image convert-batch --input-glob './images/*.png' --to webp --compress smallest --wait --output-dir ./images-webp
 ```
 
 Remove a watermark from a single image:

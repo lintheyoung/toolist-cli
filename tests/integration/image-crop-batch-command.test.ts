@@ -399,4 +399,45 @@ describe('image crop-batch command', () => {
 
     await rm(tempDir, { recursive: true, force: true });
   });
+
+  it('maps --compress balanced to quality 75 for image crop-batch', async () => {
+    const imageCropBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/crop-batch.js', () => ({
+      buildCropBatchManifest: vi.fn(),
+      imageCropBatchCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'crop-batch',
+      '--inputs',
+      '/tmp/photo-a.png',
+      '--x',
+      '0',
+      '--y',
+      '0',
+      '--width',
+      '640',
+      '--height',
+      '480',
+      '--to',
+      'webp',
+      '--compress',
+      'balanced',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(imageCropBatchCommand).toHaveBeenCalledWith(expect.objectContaining({
+      quality: 75,
+    }));
+  });
 });

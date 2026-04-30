@@ -12,6 +12,7 @@ export interface ImageResizeBatchCommandArgs {
   width?: number;
   height?: number;
   to?: string;
+  quality?: number;
   concurrency?: number;
   wait?: boolean;
   outputDir?: string;
@@ -29,6 +30,7 @@ export interface ResizeBatchManifestArgs {
   width?: number;
   height?: number;
   to?: string;
+  quality?: number;
   concurrency?: number;
   wait?: boolean;
   outputDir?: string;
@@ -113,6 +115,7 @@ export async function buildResizeBatchManifest(
         ...(args.width !== undefined ? { width: args.width } : {}),
         ...(args.height !== undefined ? { height: args.height } : {}),
         ...(targetMimeType ? { target_mime_type: targetMimeType } : {}),
+        ...(args.quality !== undefined ? { quality: args.quality } : {}),
       }),
     },
     {
