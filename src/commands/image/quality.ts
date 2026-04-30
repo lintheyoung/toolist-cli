@@ -6,6 +6,8 @@ const COMPRESS_QUALITY_BY_PRESET: Record<ImageCompressPreset, number> = {
   smallest: 35,
 };
 
+const DEFAULT_WEBP_QUALITY = COMPRESS_QUALITY_BY_PRESET.small;
+
 export function parseImageCompressPreset(value: string | undefined): ImageCompressPreset {
   if (value === 'balanced' || value === 'small' || value === 'smallest') {
     return value;
@@ -17,10 +19,17 @@ export function parseImageCompressPreset(value: string | undefined): ImageCompre
 export function resolveImageQuality(args: {
   quality?: number;
   compress?: ImageCompressPreset;
+  to?: string;
 }): number | undefined {
   if (args.quality !== undefined) {
     return args.quality;
   }
 
-  return args.compress ? COMPRESS_QUALITY_BY_PRESET[args.compress] : undefined;
+  if (args.compress) {
+    return COMPRESS_QUALITY_BY_PRESET[args.compress];
+  }
+
+  const target = args.to?.trim().toLowerCase();
+
+  return target === 'webp' || target === 'image/webp' ? DEFAULT_WEBP_QUALITY : undefined;
 }

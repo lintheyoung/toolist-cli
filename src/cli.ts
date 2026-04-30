@@ -495,6 +495,7 @@ export function getImageHelp(): string {
     '',
     'Compression presets:',
     '  --compress balanced maps to quality 75; small maps to 55; smallest maps to 35',
+    '  --to webp defaults to --compress small when neither --quality nor --compress is provided',
     '  --quality is explicit and takes precedence when both options are provided',
   ].join('\n') + '\n';
 }
@@ -559,6 +560,7 @@ export function getImageConvertBatchHelp(): string {
     '  --to           Target output format',
     '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
     '  --compress     Compression preset: balanced=75, small=55, smallest=35',
+    '                 Defaults to small for --to webp when --quality is omitted',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
@@ -588,6 +590,7 @@ export function getImageResizeBatchHelp(): string {
     '  --to           Target output format',
     '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
     '  --compress     Compression preset: balanced=75, small=55, smallest=35',
+    '                 Defaults to small for --to webp when --quality is omitted',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
@@ -655,6 +658,7 @@ export function getImageCropBatchHelp(): string {
     '  --to           Target output format',
     '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
     '  --compress     Compression preset: balanced=75, small=55, smallest=35',
+    '                 Defaults to small for --to webp when --quality is omitted',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',

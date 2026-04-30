@@ -1,6 +1,6 @@
 {
   "name": "toolist-cli",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Agent-first CLI for Toollist platform APIs.",
   "license": "MIT",
   "type": "module",
