@@ -25,6 +25,7 @@ describe('image resize-batch wrapper', () => {
       inputs: [first, second],
       width: 1200,
       to: 'webp',
+      quality: 35,
     });
 
     expect(manifest.items).toHaveLength(2);
@@ -35,6 +36,7 @@ describe('image resize-batch wrapper', () => {
       input: {
         width: 1200,
         target_mime_type: 'image/webp',
+        quality: 35,
       },
     });
     expect(manifest.items[1]).toMatchObject({
@@ -125,6 +127,7 @@ describe('image resize-batch wrapper', () => {
         inputs: [first, second],
         width: 1200,
         to: 'webp',
+        quality: 35,
         concurrency: 2,
         wait: true,
         outputDir: join(tempDir, 'outputs'),
@@ -180,6 +183,7 @@ describe('image resize-batch wrapper', () => {
           input: {
             width: 1200,
             target_mime_type: 'image/webp',
+            quality: 35,
           },
         },
         {
@@ -189,6 +193,7 @@ describe('image resize-batch wrapper', () => {
           input: {
             width: 1200,
             target_mime_type: 'image/webp',
+            quality: 35,
           },
         },
       ],
@@ -325,6 +330,8 @@ describe('image resize-batch command', () => {
       '640',
       '--to',
       'webp',
+      '--quality',
+      '35',
       '--concurrency',
       '2',
       '--wait',
@@ -348,6 +355,7 @@ describe('image resize-batch command', () => {
       width: 640,
       height: undefined,
       to: 'webp',
+      quality: 35,
       concurrency: 2,
       wait: true,
       outputDir: '/tmp/outputs',
@@ -460,6 +468,41 @@ describe('image resize-batch command', () => {
       configPath: undefined,
       env: 'dev',
     });
+  });
+
+  it('maps --compress smallest to quality 35 for image resize-batch', async () => {
+    const imageResizeBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: { total: 1, succeeded: 1, failed: 0, skipped: 0 },
+      items: [],
+    }));
+    vi.doMock('../../src/commands/image/resize-batch.js', () => ({
+      buildResizeBatchManifest: vi.fn(),
+      imageResizeBatchCommand,
+    }));
+
+    const result = await runCli([
+      'image',
+      'resize-batch',
+      '--inputs',
+      '/tmp/photo-a.png',
+      '--width',
+      '640',
+      '--to',
+      'webp',
+      '--compress',
+      'smallest',
+      '--base-url',
+      'https://api.example.com',
+      '--token',
+      'tgc_cli_secret',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(imageResizeBatchCommand).toHaveBeenCalledWith(expect.objectContaining({
+      quality: 35,
+    }));
   });
 
   it('rejects resize-batch when neither width nor height is provided', async () => {

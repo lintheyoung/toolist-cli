@@ -19,6 +19,11 @@ import {
 } from './commands/image/remove-watermark-batch.js';
 import { imageResizeBatchCommand } from './commands/image/resize-batch.js';
 import { imageResizeCommand } from './commands/image/resize.js';
+import {
+  parseImageCompressPreset,
+  resolveImageQuality,
+  type ImageCompressPreset,
+} from './commands/image/quality.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { markdownUploadImagesCommand } from './commands/markdown/upload-images.js';
@@ -115,6 +120,14 @@ function isIntegerInRange(value: number, minimum: number, maximum?: number): boo
 
 function isNumberInRange(value: number, minimum: number, maximum: number): boolean {
   return Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function parseImageCompressOption(value: string | undefined, flag: string): ImageCompressPreset {
+  if (!value) {
+    missingOptionValue(flag);
+  }
+
+  return parseImageCompressPreset(value);
 }
 
 function getRequiredOptionValue(
@@ -457,16 +470,16 @@ export function getImageHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
@@ -479,6 +492,10 @@ export function getImageHelp(): string {
     '  resize-batch  Resize multiple images through the batch wrapper',
     '  crop-batch  Crop multiple images through the batch wrapper',
     '  crop     Crop an image through the API',
+    '',
+    'Compression presets:',
+    '  --compress balanced maps to quality 75; small maps to 55; smallest maps to 35',
+    '  --quality is explicit and takes precedence when both options are provided',
   ].join('\n') + '\n';
 }
 
@@ -534,13 +551,14 @@ export function getImageConvertBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
     '  --input-glob   Glob pattern for input files',
     '  --to           Target output format',
-    '  --quality      Output quality as an integer from 1 to 100',
+    '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
+    '  --compress     Compression preset: balanced=75, small=55, smallest=35',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
@@ -560,7 +578,7 @@ export function getImageResizeBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -568,6 +586,8 @@ export function getImageResizeBatchHelp(): string {
     '  --width        Resize width in pixels',
     '  --height       Resize height in pixels',
     '  --to           Target output format',
+    '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
+    '  --compress     Compression preset: balanced=75, small=55, smallest=35',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
@@ -623,7 +643,7 @@ export function getImageCropBatchHelp(): string {
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -633,7 +653,8 @@ export function getImageCropBatchHelp(): string {
     '  --width        Crop width in pixels',
     '  --height       Crop height in pixels',
     '  --to           Target output format',
-    '  --quality      Output quality as an integer from 1 to 100',
+    '  --quality      Output quality as an integer from 1 to 100; wins over --compress',
+    '  --compress     Compression preset: balanced=75, small=55, smallest=35',
     '  --concurrency  Number of batch items to run in parallel',
     '  --wait         Wait for each batch job to finish',
     '  --output-dir   Directory for downloaded outputs',
@@ -1340,6 +1361,7 @@ function parseImageConvertArgs(args: string[]): {
   input?: string;
   to?: string;
   quality?: number;
+  compress?: ImageCompressPreset;
   sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
@@ -1353,6 +1375,7 @@ function parseImageConvertArgs(args: string[]): {
     input?: string;
     to?: string;
     quality?: number;
+    compress?: ImageCompressPreset;
     sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
@@ -1444,6 +1467,14 @@ function parseImageConvertArgs(args: string[]): {
       }
 
       parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
       if (consumeNext) {
         index += 1;
       }
@@ -2076,6 +2107,7 @@ function parseImageResizeArgs(args: string[]): {
   height?: number;
   to?: string;
   quality?: number;
+  compress?: ImageCompressPreset;
   sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
@@ -2091,6 +2123,7 @@ function parseImageResizeArgs(args: string[]): {
     height?: number;
     to?: string;
     quality?: number;
+    compress?: ImageCompressPreset;
     sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
@@ -2216,6 +2249,14 @@ function parseImageResizeArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--wait') {
       parsed.wait = true;
       continue;
@@ -2268,6 +2309,8 @@ function parseImageResizeBatchArgs(args: string[]): {
   width?: number;
   height?: number;
   to?: string;
+  quality?: number;
+  compress?: ImageCompressPreset;
   concurrency?: number;
   wait?: boolean;
   outputDir?: string;
@@ -2283,6 +2326,8 @@ function parseImageResizeBatchArgs(args: string[]): {
     width?: number;
     height?: number;
     to?: string;
+    quality?: number;
+    compress?: ImageCompressPreset;
     concurrency?: number;
     wait?: boolean;
     outputDir?: string;
@@ -2415,6 +2460,28 @@ function parseImageResizeBatchArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--quality') {
+      const qualityValue = Number(value ?? rawValue);
+
+      if (!isIntegerInRange(qualityValue, 1, 100)) {
+        throw new Error('Invalid value for --quality.');
+      }
+
+      parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--concurrency') {
       const concurrencyValue = Number(value ?? rawValue);
 
@@ -2469,6 +2536,7 @@ function parseImageConvertBatchArgs(args: string[]): {
   inputGlob?: string;
   to?: string;
   quality?: number;
+  compress?: ImageCompressPreset;
   concurrency?: number;
   wait?: boolean;
   outputDir?: string;
@@ -2483,6 +2551,7 @@ function parseImageConvertBatchArgs(args: string[]): {
     inputGlob?: string;
     to?: string;
     quality?: number;
+    compress?: ImageCompressPreset;
     concurrency?: number;
     wait?: boolean;
     outputDir?: string;
@@ -2595,6 +2664,14 @@ function parseImageConvertBatchArgs(args: string[]): {
       }
 
       parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
       if (consumeNext) {
         index += 1;
       }
@@ -2659,6 +2736,7 @@ function parseImageCropBatchArgs(args: string[]): {
   height?: number;
   to?: string;
   quality?: number;
+  compress?: ImageCompressPreset;
   concurrency?: number;
   wait?: boolean;
   outputDir?: string;
@@ -2677,6 +2755,7 @@ function parseImageCropBatchArgs(args: string[]): {
     height?: number;
     to?: string;
     quality?: number;
+    compress?: ImageCompressPreset;
     concurrency?: number;
     wait?: boolean;
     outputDir?: string;
@@ -2851,6 +2930,14 @@ function parseImageCropBatchArgs(args: string[]): {
       continue;
     }
 
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
     if (flag === '--concurrency') {
       const concurrencyValue = Number(value ?? rawValue);
 
@@ -2908,6 +2995,7 @@ function parseImageCropArgs(args: string[]): {
   height?: number;
   to?: string;
   quality?: number;
+  compress?: ImageCompressPreset;
   sync?: boolean;
   wait?: boolean;
   timeoutSeconds?: number;
@@ -2925,6 +3013,7 @@ function parseImageCropArgs(args: string[]): {
     height?: number;
     to?: string;
     quality?: number;
+    compress?: ImageCompressPreset;
     sync?: boolean;
     wait?: boolean;
     timeoutSeconds?: number;
@@ -3072,6 +3161,14 @@ function parseImageCropArgs(args: string[]): {
       }
 
       parsed.quality = qualityValue;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--compress') {
+      parsed.compress = parseImageCompressOption(value, flag);
       if (consumeNext) {
         index += 1;
       }
@@ -3886,7 +3983,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         const result = await imageConvertCommand(retryArgs({
           input: parsed.input,
           to: parsed.to,
-          quality: parsed.quality,
+          quality: resolveImageQuality(parsed),
           sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
@@ -4036,7 +4133,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           inputs: parsed.inputs,
           inputGlob: parsed.inputGlob,
           to: parsed.to,
-          quality: parsed.quality,
+          quality: resolveImageQuality(parsed),
           concurrency: parsed.concurrency,
           wait: parsed.wait,
           outputDir: parsed.outputDir,
@@ -4087,7 +4184,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           width: parsed.width,
           height: parsed.height,
           to: parsed.to,
-          quality: parsed.quality,
+          quality: resolveImageQuality(parsed),
           concurrency: parsed.concurrency,
           wait: parsed.wait,
           outputDir: parsed.outputDir,
@@ -4125,7 +4222,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           width: parsed.width,
           height: parsed.height,
           to: parsed.to,
-          quality: parsed.quality,
+          quality: resolveImageQuality(parsed),
           sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,
@@ -4154,6 +4251,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         const credentials = await resolveApiCredentials(parsed);
         const result = await imageResizeBatchCommand(retryArgs({
           ...parsed,
+          quality: resolveImageQuality(parsed),
           ...credentials,
           configPath: parsed.configPath,
           onRetry,
@@ -4203,7 +4301,7 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
           width: parsed.width,
           height: parsed.height,
           to: parsed.to,
-          quality: parsed.quality,
+          quality: resolveImageQuality(parsed),
           sync: parsed.sync,
           wait: parsed.wait,
           timeoutSeconds: parsed.timeoutSeconds,

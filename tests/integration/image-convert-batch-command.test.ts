@@ -66,6 +66,8 @@ describe('image convert-batch command', () => {
       '/tmp/photo-b.jpg',
       '--to',
       'webp',
+      '--compress',
+      'small',
       '--concurrency',
       '2',
       '--wait',
@@ -87,7 +89,7 @@ describe('image convert-batch command', () => {
       inputs: ['/tmp/photo-a.jpg', '/tmp/photo-b.jpg'],
       inputGlob: undefined,
       to: 'webp',
-      quality: undefined,
+      quality: 55,
       concurrency: 2,
       wait: true,
       outputDir: '/tmp/outputs',
@@ -352,6 +354,48 @@ describe('image convert-batch command', () => {
       ],
     });
     expect(result.summary.total).toBe(2);
+
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('includes quality 55 in each convert-batch manifest item', async () => {
+    vi.doMock('../../src/commands/image/convert-input-policy.js', () => ({
+      assertSupportedConvertInputPath: vi.fn(async () => undefined),
+    }));
+    const tempDir = await mkdtemp(join(tmpdir(), 'toollist-convert-batch-'));
+    const first = join(tempDir, 'a.png');
+    const second = join(tempDir, 'b.png');
+    await writeFile(first, 'a');
+    await writeFile(second, 'b');
+
+    const runBatchCommand = vi.fn(async () => ({
+      batch_id: 'batch_123',
+      summary: { total: 2, succeeded: 2, failed: 0, skipped: 0 },
+      items: [],
+    }));
+
+    const { imageConvertBatchCommand } = await import(
+      '../../src/commands/image/convert-batch.js'
+    );
+
+    await imageConvertBatchCommand(
+      {
+        inputs: [first, second],
+        to: 'webp',
+        quality: 55,
+        baseUrl: 'https://api.example.com',
+        token: 'tgc_cli_secret',
+        env: 'test',
+      },
+      { runBatchCommand },
+    );
+
+    const readBatchManifest = runBatchCommand.mock.calls[0]?.[1]?.readBatchManifest as
+      | (() => Promise<{ items: Array<{ input: Record<string, unknown> }> }>)
+      | undefined;
+    const manifest = await readBatchManifest?.();
+
+    expect(manifest?.items.map((item) => item.input.quality)).toEqual([55, 55]);
 
     await rm(tempDir, { recursive: true, force: true });
   });
