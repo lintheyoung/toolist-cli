@@ -1,0 +1,17 @@
+toollist image remove-background
+
+Defaults to https://tooli.st. Use --base-url only for non-production targets.
+
+Usage:
+  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+
+Options:
+  --input        Image file path
+  --wait         Wait for the background removal job to finish
+  --timeout      Maximum wait time in seconds
+  --output       Download background-removed PNG to a local path
+  --base-url     API base URL (defaults to https://tooli.st)
+  --env          Target environment: prod | test | dev
+  --token        API access token
+  --config-path  Path to saved CLI config
+  --json         Emit JSON output explicitly (default behavior)

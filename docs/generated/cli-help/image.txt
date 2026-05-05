@@ -1,0 +1,31 @@
+toollist image
+
+Defaults to https://tooli.st. Use --base-url only for non-production targets.
+
+Usage:
+  toollist image convert --input <path> --to <format> [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]
+  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]
+  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]
+  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+
+Commands:
+  convert  Convert an image format through the API
+  gpt-image-2  Generate an image with Kie GPT Image 2 through the API
+  convert-batch  Convert multiple images through the batch wrapper
+  remove-background  Remove the background from an image through the API
+  remove-watermark  Remove a watermark from an image through the API
+  remove-watermark-batch  Remove watermarks from a zipped image batch through the API
+  resize   Resize an image through the API
+  resize-batch  Resize multiple images through the batch wrapper
+  crop-batch  Crop multiple images through the batch wrapper
+  crop     Crop an image through the API
+
+Compression presets:
+  --compress balanced maps to quality 75; small maps to 55; smallest maps to 35
+  --quality is explicit and takes precedence when both options are provided
