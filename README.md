@@ -41,6 +41,10 @@ Upload a public file:
 npx toolist-cli@latest files upload --input ./photo.jpg --public --json
 ```
 
+## Full Manual
+
+The complete Toolist CLI manual lives at [https://tooli.st/docs](https://tooli.st/docs).
+
 ## Hosted Environments
 
 Toollist CLI has three built-in hosted environments:

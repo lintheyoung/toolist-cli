@@ -1,0 +1,13 @@
+toollist files
+
+Usage:
+  toollist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]
+
+Defaults to https://tooli.st.
+
+Commands:
+  upload  Upload a file through the API
+
+Options:
+  --sha256  Compute and send a client-side sha256 during upload completion
+  --public  Request a public upload URL and public file access

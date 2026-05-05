@@ -1,0 +1,59 @@
+{
+  "docsRoot": "https://tooli.st/docs",
+  "entries": [
+    {
+      "command": "files upload",
+      "helpArgs": ["files", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/files.txt"
+    },
+    {
+      "command": "image convert",
+      "helpArgs": ["image", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/image.txt"
+    },
+    {
+      "command": "image resize",
+      "helpArgs": ["image", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/image.txt"
+    },
+    {
+      "command": "image crop",
+      "helpArgs": ["image", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/image.txt"
+    },
+    {
+      "command": "image remove-watermark",
+      "helpArgs": ["image", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/image.txt"
+    },
+    {
+      "command": "image remove-background",
+      "helpArgs": ["image", "remove-background", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/image-remove-background.txt"
+    },
+    {
+      "command": "document docx-to-markdown",
+      "helpArgs": ["document", "docx-to-markdown", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/document-docx-to-markdown.txt"
+    },
+    {
+      "command": "markdown upload-images",
+      "helpArgs": ["markdown", "upload-images", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/markdown-upload-images.txt"
+    },
+    {
+      "command": "twitter watch",
+      "helpArgs": ["twitter", "watch", "--help"],
+      "docsUrl": "https://tooli.st/docs",
+      "snapshot": "docs/generated/cli-help/twitter-watch.txt"
+    }
+  ]
+}

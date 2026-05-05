@@ -1,0 +1,17 @@
+toollist document docx-to-markdown
+
+Defaults to https://tooli.st. Use --base-url only for non-production targets.
+
+Usage:
+  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+
+Options:
+  --input        DOCX file path
+  --wait         Wait for the conversion job to finish
+  --timeout      Maximum wait time in seconds
+  --output       Download bundle.zip to a local path
+  --base-url     API base URL (defaults to https://tooli.st)
+  --env          Target environment: prod | test | dev
+  --token        API access token
+  --config-path  Path to saved CLI config
+  --json         Emit JSON output explicitly (default behavior)
