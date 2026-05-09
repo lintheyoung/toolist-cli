@@ -1405,7 +1405,7 @@ function parseWeClawRelayArgs(args: string[]): SharedApiArgs & {
     if (flag === '--interval') {
       const parsedInterval = parseIntegerRangeOption(flag, rawValue, args, index, 1, 3600);
       parsed.intervalSeconds = parsedInterval.value;
-      if (parsedInterval.consumeNext) {
+      if (consumeNext || parsedInterval.consumeNext) {
         index += 1;
       }
       continue;
@@ -1414,7 +1414,7 @@ function parseWeClawRelayArgs(args: string[]): SharedApiArgs & {
     if (flag === '--limit') {
       const parsedLimit = parseIntegerRangeOption(flag, rawValue, args, index, 1, 100);
       parsed.limit = parsedLimit.value;
-      if (parsedLimit.consumeNext) {
+      if (consumeNext || parsedLimit.consumeNext) {
         index += 1;
       }
       continue;

@@ -739,6 +739,128 @@ describe('weclaw command', () => {
     expect(removeListenerSpy).toHaveBeenCalledWith('SIGTERM', sigtermHandler);
   });
 
+  it('parses relay --limit and --interval when values are separated by spaces', async () => {
+    const weclawRelayCommand = vi.fn(async () => ({
+      ok: true,
+      once: true,
+      relayId: 'relay-space',
+      weclawUrl: 'http://127.0.0.1:18011',
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycleFailures: 0,
+      cycles: 1,
+      deliveries: [],
+    }));
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({
+      DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS: 10,
+      DEFAULT_WECLAW_RELAY_LIMIT: 10,
+      weclawRelayCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'relay',
+      '--once',
+      '--limit',
+      '5',
+      '--interval',
+      '7',
+      '--relay-id',
+      'relay-space',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe('');
+    expect(JSON.parse(stdout)).toEqual(expect.objectContaining({ ok: true, once: true }));
+    expect(weclawRelayCommand.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      intervalSeconds: 7,
+      limit: 5,
+      relayId: 'relay-space',
+    }));
+  });
+
+  it('parses relay --limit and --interval when values use equals syntax', async () => {
+    const weclawRelayCommand = vi.fn(async () => ({
+      ok: true,
+      once: true,
+      relayId: 'relay-equals',
+      weclawUrl: 'http://127.0.0.1:18011',
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycleFailures: 0,
+      cycles: 1,
+      deliveries: [],
+    }));
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({
+      DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS: 10,
+      DEFAULT_WECLAW_RELAY_LIMIT: 10,
+      weclawRelayCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'relay',
+      '--once',
+      '--limit=6',
+      '--interval=8',
+      '--relay-id',
+      'relay-equals',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe('');
+    expect(JSON.parse(stdout)).toEqual(expect.objectContaining({ ok: true, once: true }));
+    expect(weclawRelayCommand.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      intervalSeconds: 8,
+      limit: 6,
+      relayId: 'relay-equals',
+    }));
+  });
+
   it('removes process signal handlers when continuous relay CLI runs fail', async () => {
     const weclawRelayCommand = vi.fn(async () => {
       throw new Error('relay unavailable');
