@@ -125,6 +125,41 @@ describe('weclaw command', () => {
     });
   });
 
+  it('rejects hosted API options for local WeClaw status', async () => {
+    const weclawStatusCommand = vi.fn(async () => ({
+      ok: true,
+      weclawUrl: 'http://127.0.0.1:18011',
+    }));
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({ weclawRelayCommand: vi.fn() }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'status',
+      '--env',
+      'test',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toBe('Unknown option: --env\n');
+    expect(weclawStatusCommand).not.toHaveBeenCalled();
+  });
+
   it('dispatches bind through the CLI with test hosted credentials', async () => {
     const weclawBindCommand = vi.fn(async () => ({
       ok: true,

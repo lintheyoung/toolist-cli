@@ -270,7 +270,7 @@ export function getRootHelp(): string {
     '',
     'Discover supported tools:',
     '  toollist tools list',
-    '  toolist weclaw status',
+    '  toollist weclaw status',
     '  toollist image gpt-image-2 --prompt "Create a clean square app icon..." --wait --output icon.png',
     '  toollist image remove-background --input photo.png --wait --output photo-background-removed.png',
     '',
@@ -1160,16 +1160,6 @@ function parseWeClawStatusArgs(args: string[]): {
         missingOptionValue(flag);
       }
       parsed.weclawUrl = value;
-      if (consumeNext) {
-        index += 1;
-      }
-      continue;
-    }
-
-    if (flag === '--base-url' || flag === '--token' || flag === '--config-path' || flag === '--env') {
-      if (!value && !(flag === '--token' && isExplicitEmptyOption(rawValue))) {
-        missingOptionValue(flag);
-      }
       if (consumeNext) {
         index += 1;
       }
