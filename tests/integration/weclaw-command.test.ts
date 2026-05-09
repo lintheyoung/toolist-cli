@@ -67,22 +67,26 @@ describe('weclaw command', () => {
     })) as typeof fetch;
     const { sendWeClawLocalMessage, WeClawLocalError } = await import('../../src/lib/weclaw-local.js');
 
-    await expect(sendWeClawLocalMessage({
-      baseUrl: 'http://127.0.0.1:18011',
-      to: 'wx_target@im.wechat',
-      text: 'Hello',
-      fetchImpl,
-    })).rejects.toMatchObject({
+    let caughtError: unknown;
+
+    try {
+      await sendWeClawLocalMessage({
+        baseUrl: 'http://127.0.0.1:18011',
+        to: 'wx_target@im.wechat',
+        text: 'Hello',
+        fetchImpl,
+      });
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(WeClawLocalError);
+    expect(caughtError).toMatchObject({
       name: 'WeClawLocalError',
       status: 502,
       message: expect.stringContaining('WeClaw send failed with status 502'),
     });
-    await expect(sendWeClawLocalMessage({
-      baseUrl: 'http://127.0.0.1:18011',
-      to: 'wx_target@im.wechat',
-      text: 'Hello',
-      fetchImpl,
-    })).rejects.toBeInstanceOf(WeClawLocalError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('dispatches status through the CLI and keeps stdout JSON-only', async () => {
@@ -325,6 +329,131 @@ describe('weclaw command', () => {
     }));
   });
 
+  it('handles an empty relay claim without sending or acking', async () => {
+    const requests: Array<{ path: string; body?: unknown }> = [];
+    const apiRequest = vi.fn(async <T,>(args: { path: string; body?: unknown }) => {
+      requests.push({ path: args.path, body: args.body });
+
+      return {
+        data: {
+          deliveries: [],
+        },
+      } as T;
+    });
+    const sendWeClawLocalMessage = vi.fn(async () => ({ ok: true }));
+    const { weclawRelayCommand } = await import('../../src/commands/weclaw/relay.js');
+
+    const result = await weclawRelayCommand({
+      baseUrl: 'https://test.tooli.st',
+      token: 'toolist-token',
+      weclawUrl: 'http://127.0.0.1:18011',
+      once: true,
+      limit: 10,
+      intervalSeconds: 10,
+      relayId: 'test-relay',
+    }, {
+      apiRequest,
+      checkWeClawHealth: vi.fn(async () => ({ ok: true })),
+      sendWeClawLocalMessage,
+      progress: vi.fn(),
+    });
+
+    expect(requests).toEqual([{
+      path: '/api/v1/weclaw-deliveries/claim',
+      body: {
+        limit: 10,
+        relayId: 'test-relay',
+      },
+    }]);
+    expect(sendWeClawLocalMessage).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycles: 1,
+      deliveries: [],
+    }));
+  });
+
+  it('processes multiple relay deliveries in one cycle', async () => {
+    const requests: Array<{ path: string; body?: unknown }> = [];
+    const apiRequest = vi.fn(async <T,>(args: { path: string; body?: unknown }) => {
+      requests.push({ path: args.path, body: args.body });
+
+      if (args.path === '/api/v1/weclaw-deliveries/claim') {
+        return {
+          data: {
+            deliveries: [
+              {
+                id: 'wc_delivery_1',
+                to: 'wx_target_1@im.wechat',
+                text: 'First',
+              },
+              {
+                id: 'wc_delivery_2',
+                to: 'wx_target_2@im.wechat',
+                text: 'Second',
+              },
+            ],
+          },
+        } as T;
+      }
+
+      return { data: { ok: true } } as T;
+    });
+    const sendWeClawLocalMessage = vi.fn(async () => ({ ok: true }));
+    const { weclawRelayCommand } = await import('../../src/commands/weclaw/relay.js');
+
+    const result = await weclawRelayCommand({
+      baseUrl: 'https://test.tooli.st',
+      token: 'toolist-token',
+      weclawUrl: 'http://127.0.0.1:18011',
+      once: true,
+      limit: 10,
+      intervalSeconds: 10,
+      relayId: 'test-relay',
+    }, {
+      apiRequest,
+      checkWeClawHealth: vi.fn(async () => ({ ok: true })),
+      sendWeClawLocalMessage,
+      progress: vi.fn(),
+    });
+
+    expect(sendWeClawLocalMessage).toHaveBeenCalledTimes(2);
+    expect(sendWeClawLocalMessage).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      to: 'wx_target_1@im.wechat',
+      text: 'First',
+    }));
+    expect(sendWeClawLocalMessage).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      to: 'wx_target_2@im.wechat',
+      text: 'Second',
+    }));
+    expect(requests).toContainEqual({
+      path: '/api/v1/weclaw-deliveries/wc_delivery_1/ack',
+      body: {
+        status: 'sent',
+      },
+    });
+    expect(requests).toContainEqual({
+      path: '/api/v1/weclaw-deliveries/wc_delivery_2/ack',
+      body: {
+        status: 'sent',
+      },
+    });
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      claimed: 2,
+      sent: 2,
+      failed: 0,
+      cycles: 1,
+    }));
+    expect(result.deliveries.map((delivery) => delivery.id)).toEqual([
+      'wc_delivery_1',
+      'wc_delivery_2',
+    ]);
+  });
+
   it('acks failed and reports the error when local WeClaw send fails', async () => {
     const requests: Array<{ path: string; body?: unknown }> = [];
     const apiRequest = vi.fn(async <T,>(args: { path: string; body?: unknown }) => {
@@ -381,6 +510,87 @@ describe('weclaw command', () => {
       id: 'wc_delivery_500',
       status: 'failed',
       errorMessage: 'WeClaw send failed with status 500. bridge failed',
+    }));
+  });
+
+  it('stops continuous relay when sleep aborts the stop signal', async () => {
+    const controller = new AbortController();
+    const apiRequest = vi.fn(async <T,>() => ({
+      data: {
+        deliveries: [],
+      },
+    }) as T);
+    const sleep = vi.fn(async () => {
+      controller.abort();
+    });
+    const { weclawRelayCommand } = await import('../../src/commands/weclaw/relay.js');
+
+    const result = await weclawRelayCommand({
+      baseUrl: 'https://test.tooli.st',
+      token: 'toolist-token',
+      weclawUrl: 'http://127.0.0.1:18011',
+      once: false,
+      limit: 10,
+      intervalSeconds: 1,
+      relayId: 'test-relay',
+      stopSignal: controller.signal,
+    }, {
+      apiRequest,
+      checkWeClawHealth: vi.fn(async () => ({ ok: true })),
+      sendWeClawLocalMessage: vi.fn(async () => ({ ok: true })),
+      progress: vi.fn(),
+      sleep,
+    });
+
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(1000, controller.signal);
+    expect(result).toEqual(expect.objectContaining({
+      ok: true,
+      once: false,
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycles: 1,
+    }));
+  });
+
+  it('marks continuous relay unhealthy when a claim cycle fails before abort', async () => {
+    const controller = new AbortController();
+    const apiRequest = vi.fn(async () => {
+      throw new Error('claim unavailable');
+    });
+    const sleep = vi.fn(async () => {
+      controller.abort();
+    });
+    const { weclawRelayCommand } = await import('../../src/commands/weclaw/relay.js');
+
+    const result = await weclawRelayCommand({
+      baseUrl: 'https://test.tooli.st',
+      token: 'toolist-token',
+      weclawUrl: 'http://127.0.0.1:18011',
+      once: false,
+      limit: 10,
+      intervalSeconds: 1,
+      relayId: 'test-relay',
+      stopSignal: controller.signal,
+    }, {
+      apiRequest,
+      checkWeClawHealth: vi.fn(async () => ({ ok: true })),
+      sendWeClawLocalMessage: vi.fn(async () => ({ ok: true })),
+      progress: vi.fn(),
+      sleep,
+    });
+
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(2000, controller.signal);
+    expect(result).toEqual(expect.objectContaining({
+      ok: false,
+      once: false,
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycles: 0,
+      cycleFailures: 1,
     }));
   });
 });

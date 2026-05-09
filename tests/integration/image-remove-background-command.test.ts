@@ -34,7 +34,7 @@ describe('image remove-background command', () => {
     const result = await runCli(['--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image remove-background');
+    expect(result.stdout).toContain('toolist image remove-background');
   });
 
   it('prints image help with remove-background listed', async () => {

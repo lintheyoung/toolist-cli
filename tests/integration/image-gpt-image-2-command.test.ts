@@ -35,7 +35,7 @@ describe('image gpt-image-2 command', () => {
     const commandHelp = await runCli(['image', 'gpt-image-2', '--help']);
 
     expect(rootHelp.exitCode).toBe(0);
-    expect(rootHelp.stdout).toContain('toollist image gpt-image-2');
+    expect(rootHelp.stdout).toContain('toolist image gpt-image-2');
     expect(imageHelp.exitCode).toBe(0);
     expect(imageHelp.stdout).toContain('toollist image gpt-image-2 --prompt <text>');
     expect(imageHelp.stdout).toContain('gpt-image-2  Generate an image with Kie GPT Image 2 through the API');

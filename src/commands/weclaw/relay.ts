@@ -42,6 +42,7 @@ export interface WeClawRelayCommandResult {
   claimed: number;
   sent: number;
   failed: number;
+  cycleFailures: number;
   cycles: number;
   deliveries: WeClawDeliveryResult[];
 }
@@ -94,6 +95,14 @@ function createDefaultDependencies(): WeClawRelayDependencies {
     progress: () => {},
     createRelayId: createDefaultRelayId,
   };
+}
+
+function getRelaySleepSeconds(intervalSeconds: number, failureStreak: number): number {
+  if (failureStreak <= 0) {
+    return intervalSeconds;
+  }
+
+  return Math.min(intervalSeconds * 2 ** Math.min(failureStreak, 10), 60);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -297,6 +306,7 @@ export async function weclawRelayCommand(
     claimed: 0,
     sent: 0,
     failed: 0,
+    cycleFailures: 0,
     cycles: 0,
     deliveries: [],
   };
@@ -329,6 +339,7 @@ export async function weclawRelayCommand(
       }
 
       failureStreak += 1;
+      summary.cycleFailures += 1;
       deps.progress(`WeClaw relay cycle failed: ${formatErrorMessage(error)}`);
     }
 
@@ -336,15 +347,13 @@ export async function weclawRelayCommand(
       break;
     }
 
-    const sleepSeconds = failureStreak > 0
-      ? Math.min(intervalSeconds * 2 ** failureStreak, 60)
-      : intervalSeconds;
+    const sleepSeconds = getRelaySleepSeconds(intervalSeconds, failureStreak);
 
     deps.progress(`Sleeping ${sleepSeconds}s...`);
     await deps.sleep(sleepSeconds * 1000, args.stopSignal);
   }
 
-  summary.ok = summary.failed === 0;
+  summary.ok = summary.failed === 0 && summary.cycleFailures === 0;
 
   return summary;
 }
