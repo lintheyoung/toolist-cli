@@ -126,7 +126,7 @@ function normalizeDeliveries(response: ClaimResponse): WeClawDelivery[] {
     }
 
     const id = getString(delivery, 'id');
-    const targetUserId = getString(delivery, 'targetUserId', 'target_user_id');
+    const targetUserId = getString(delivery, 'to', 'targetUserId', 'target_user_id');
 
     if (!id || !targetUserId) {
       return [];
@@ -167,13 +167,13 @@ async function ackDelivery(args: {
 }): Promise<void> {
   const body: {
     status: 'sent' | 'failed';
-    error_message?: string;
+    errorMessage?: string;
   } = {
     status: args.status,
   };
 
   if (args.errorMessage !== undefined) {
-    body.error_message = args.errorMessage;
+    body.errorMessage = args.errorMessage;
   }
 
   await args.deps.apiRequest({
@@ -209,7 +209,7 @@ async function runRelayCycle(args: {
     path: '/api/v1/weclaw-deliveries/claim',
     body: {
       limit: args.limit,
-      relay_id: args.relayId,
+      relayId: args.relayId,
     },
     stage: 'WeClaw delivery claim failed',
     retry: extendedNetworkRetryOptions(args.onRetry),

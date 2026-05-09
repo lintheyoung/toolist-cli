@@ -49,8 +49,9 @@ function getString(record: Record<string, unknown>, ...keys: string[]): string |
 
 function normalizeBindResponse(response: WeClawBindResponse): Omit<WeClawBindCommandResult, 'ok'> {
   const data = isRecord(response.data) ? response.data : response;
-  const bindingId = getString(data, 'bindingId', 'binding_id');
-  const targetUserId = getString(data, 'targetUserId', 'target_user_id');
+  const binding = isRecord(data.binding) ? data.binding : data;
+  const bindingId = getString(binding, 'bindingId', 'binding_id');
+  const targetUserId = getString(binding, 'targetUserId', 'target_user_id');
 
   if (!bindingId) {
     throw new Error('WeClaw binding completion response did not include bindingId.');
@@ -76,15 +77,15 @@ export async function weclawBindCommand(
   };
   const body: {
     code: string;
-    target_user_id: string;
-    target_label?: string;
+    targetUserId: string;
+    targetLabel?: string;
   } = {
     code: args.code,
-    target_user_id: args.to,
+    targetUserId: args.to,
   };
 
   if (args.label !== undefined) {
-    body.target_label = args.label;
+    body.targetLabel = args.label;
   }
 
   const response = await deps.apiRequest<WeClawBindResponse>({

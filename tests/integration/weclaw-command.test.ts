@@ -180,8 +180,10 @@ describe('weclaw command', () => {
   it('posts the binding completion body to Gateway', async () => {
     const apiRequest = vi.fn(async () => ({
       data: {
-        bindingId: 'wc_bind_123',
-        targetUserId: 'wx_target@im.wechat',
+        binding: {
+          bindingId: 'wc_bind_123',
+          targetUserId: 'wx_target@im.wechat',
+        },
       },
     }));
     const { weclawBindCommand } = await import('../../src/commands/weclaw/bind.js');
@@ -203,8 +205,8 @@ describe('weclaw command', () => {
       path: '/api/v1/weclaw-bindings/complete',
       body: {
         code: 'wc_code_123',
-        target_user_id: 'wx_target@im.wechat',
-        target_label: 'Dede WeChat',
+        targetUserId: 'wx_target@im.wechat',
+        targetLabel: 'Dede WeChat',
       },
       stage: 'WeClaw binding completion failed',
     }));
@@ -225,7 +227,7 @@ describe('weclaw command', () => {
           data: {
             deliveries: [{
               id: 'wc_delivery_123',
-              targetUserId: 'wx_target@im.wechat',
+              to: 'wx_target@im.wechat',
               text: 'Toolist job failed',
               mediaUrl: null,
             }],
@@ -265,7 +267,7 @@ describe('weclaw command', () => {
       path: '/api/v1/weclaw-deliveries/claim',
       body: {
         limit: 10,
-        relay_id: 'test-relay',
+        relayId: 'test-relay',
       },
     });
     expect(sendWeClawLocalMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -298,7 +300,7 @@ describe('weclaw command', () => {
           data: {
             deliveries: [{
               id: 'wc_delivery_500',
-              target_user_id: 'wx_target@im.wechat',
+              to: 'wx_target@im.wechat',
               text: 'Toolist job failed',
             }],
           },
@@ -331,7 +333,7 @@ describe('weclaw command', () => {
       path: '/api/v1/weclaw-deliveries/wc_delivery_500/ack',
       body: {
         status: 'failed',
-        error_message: 'WeClaw send failed with status 500. bridge failed',
+        errorMessage: 'WeClaw send failed with status 500. bridge failed',
       },
     });
     expect(result).toEqual(expect.objectContaining({
