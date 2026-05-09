@@ -37,7 +37,7 @@ describe('image convert-batch command', () => {
     const result = await runCli(['image', 'convert-batch', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image convert-batch');
+    expect(result.stdout).toContain('toolist image convert-batch');
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--to <format>');

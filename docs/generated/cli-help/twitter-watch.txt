@@ -1,8 +1,8 @@
-toollist twitter watch
+toolist twitter watch
 
 Usage:
-  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
-  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]
+  toolist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toolist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]
 
 Commands:
   poll   Pull remote watches, poll Gateway, and execute trusted local commands

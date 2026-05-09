@@ -298,7 +298,7 @@ describe('image resize-batch command', () => {
     const result = await runCli(['image', 'resize-batch', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image resize-batch');
+    expect(result.stdout).toContain('toolist image resize-batch');
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--output-dir <path>');

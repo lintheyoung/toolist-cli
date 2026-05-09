@@ -34,14 +34,14 @@ describe('image remove-background command', () => {
     const result = await runCli(['--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image remove-background');
+    expect(result.stdout).toContain('toolist image remove-background');
   });
 
   it('prints image help with remove-background listed', async () => {
     const result = await runCli(['image', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image remove-background --input <path>');
+    expect(result.stdout).toContain('toolist image remove-background --input <path>');
     expect(result.stdout).toContain('remove-background  Remove the background from an image through the API');
   });
 
@@ -49,7 +49,7 @@ describe('image remove-background command', () => {
     const result = await runCli(['image', 'remove-background', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image remove-background');
+    expect(result.stdout).toContain('toolist image remove-background');
     expect(result.stdout).toContain('--input        Image file path');
     expect(result.stdout).toContain('--output       Download background-removed PNG to a local path');
   });

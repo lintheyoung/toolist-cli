@@ -1,9 +1,9 @@
-toollist document docx-to-markdown
+toolist document docx-to-markdown
 
 Defaults to https://tooli.st. Use --base-url only for non-production targets.
 
 Usage:
-  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toolist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
 
 Options:
   --input        DOCX file path

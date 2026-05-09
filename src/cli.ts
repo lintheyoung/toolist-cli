@@ -36,6 +36,13 @@ import {
   twitterWatchPollRemoteCommand,
   twitterWatchTrustCommand,
 } from './commands/twitter/watch.js';
+import { weclawBindCommand } from './commands/weclaw/bind.js';
+import {
+  DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS,
+  DEFAULT_WECLAW_RELAY_LIMIT,
+  weclawRelayCommand,
+} from './commands/weclaw/relay.js';
+import { weclawStatusCommand } from './commands/weclaw/status.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { readBatchManifest } from './lib/batch-manifest.js';
 import { getProfileForEnvironment, loadConfig } from './lib/config.js';
@@ -49,6 +56,7 @@ import {
   resolveSelectedProfileBaseUrl,
   type ToolistEnvironment,
 } from './lib/environments.js';
+import { DEFAULT_WECLAW_URL } from './lib/weclaw-local.js';
 
 export interface CliIO {
   stdout: (chunk: string) => void;
@@ -73,6 +81,10 @@ function unexpectedPositional(arg: string): never {
 
 function missingOptionValue(flag: string): never {
   throw new Error(`Missing value for option: ${flag}`);
+}
+
+function missingRequiredOption(flag: string): never {
+  throw new Error(`Missing required option: ${flag}`);
 }
 
 async function writeReportFile(path: string, contents: string): Promise<void> {
@@ -237,13 +249,13 @@ const REMOVE_WATERMARK_BATCH_TUNING_FLAGS = new Set([
 
 export function getRootHelp(): string {
   return [
-    'toollist - agent-first CLI for the Toollist platform',
+    'toolist - agent-first CLI for the Toollist platform',
     '',
     `Default API base URL: ${DEFAULT_BASE_URL}`,
     'Use --env for hosted Toollist targets. Use --base-url only for self-hosted or custom environments.',
     '',
     'Usage:',
-    '  toollist <command> [options]',
+    '  toolist <command> [options]',
     '',
     'Commands:',
     '  login    Sign in with Toollist',
@@ -251,6 +263,7 @@ export function getRootHelp(): string {
     '  whoami   Show the current identity',
     '  tools    Low-level tool registry commands',
     '  twitter  Twitter watch automation commands',
+    '  weclaw   Local WeClaw relay commands',
     '  files    Low-level file commands',
     '  markdown Markdown content commands',
     '  document High-level document commands',
@@ -260,9 +273,10 @@ export function getRootHelp(): string {
     '  help     Show help for a command',
     '',
     'Discover supported tools:',
-    '  toollist tools list',
-    '  toollist image gpt-image-2 --prompt "Create a clean square app icon..." --wait --output icon.png',
-    '  toollist image remove-background --input photo.png --wait --output photo-background-removed.png',
+    '  toolist tools list',
+    '  toolist weclaw status',
+    '  toolist image gpt-image-2 --prompt "Create a clean square app icon..." --wait --output icon.png',
+    '  toolist image remove-background --input photo.png --wait --output photo-background-removed.png',
     '',
     'Options:',
     '  -h, --help  Show help',
@@ -273,10 +287,10 @@ export function getRootHelp(): string {
 
 export function getTwitterHelp(): string {
   return [
-    'toollist twitter',
+    'toolist twitter',
     '',
     'Usage:',
-    '  toollist twitter watch <command>',
+    '  toolist twitter watch <command>',
     '',
     'Commands:',
     '  watch  Twitter public watch commands',
@@ -285,11 +299,11 @@ export function getTwitterHelp(): string {
 
 export function getTwitterWatchHelp(): string {
   return [
-    'toollist twitter watch',
+    'toolist twitter watch',
     '',
     'Usage:',
-    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '  toolist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  poll   Pull remote watches, poll Gateway, and execute trusted local commands',
@@ -299,10 +313,10 @@ export function getTwitterWatchHelp(): string {
 
 export function getTwitterWatchPollHelp(): string {
   return [
-    'toollist twitter watch poll',
+    'toolist twitter watch poll',
     '',
     'Usage:',
-    '  toollist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist twitter watch poll --remote --once [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --remote       Load enabled watches from Toolist Web',
@@ -317,10 +331,10 @@ export function getTwitterWatchPollHelp(): string {
 
 export function getTwitterWatchTrustHelp(): string {
   return [
-    'toollist twitter watch trust',
+    'toolist twitter watch trust',
     '',
     'Usage:',
-    '  toollist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
+    '  toolist twitter watch trust <watch-id> --command-hash <hash> [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --command-hash  Command template hash printed by poll output',
@@ -329,12 +343,81 @@ export function getTwitterWatchTrustHelp(): string {
   ].join('\n') + '\n';
 }
 
-export function getToolsHelp(): string {
+export function getWeClawHelp(): string {
   return [
-    'toollist tools',
+    'toolist weclaw',
     '',
     'Usage:',
-    '  toollist tools list',
+    '  toolist weclaw status [--weclaw-url <url>] [--json]',
+    '  toolist weclaw bind --code <code> --to <user_id@im.wechat> [--label <name>] [--env <prod|test|dev>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist weclaw relay [--once] [--weclaw-url <url>] [--interval <seconds>] [--limit <n>] [--relay-id <id>] [--env <prod|test|dev>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Commands:',
+    '  status  Check local WeClaw health',
+    '  bind    Complete a Toolist WeClaw pairing code',
+    '  relay   Pull pending Toolist deliveries and send through local WeClaw',
+  ].join('\n') + '\n';
+}
+
+export function getWeClawStatusHelp(): string {
+  return [
+    'toolist weclaw status',
+    '',
+    'Usage:',
+    '  toolist weclaw status [--weclaw-url <url>] [--json]',
+    '',
+    'Options:',
+    `  --weclaw-url  Local WeClaw URL (defaults to ${DEFAULT_WECLAW_URL})`,
+    '  --json        Emit JSON status',
+  ].join('\n') + '\n';
+}
+
+export function getWeClawBindHelp(): string {
+  return [
+    'toolist weclaw bind',
+    '',
+    'Usage:',
+    '  toolist weclaw bind --code <code> --to <user_id@im.wechat> [--label <name>] [--env <prod|test|dev>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --code         Dashboard pairing code',
+    '  --to           WeClaw target user id, for example user_id@im.wechat',
+    '  --label        Optional label for the binding',
+    ENVIRONMENT_OPTION_HELP,
+    '  --base-url     API base URL for custom environments',
+    '  --token        API access token',
+    '  --config-path  Config file path',
+    '  --json         Emit JSON result',
+  ].join('\n') + '\n';
+}
+
+export function getWeClawRelayHelp(): string {
+  return [
+    'toolist weclaw relay',
+    '',
+    'Usage:',
+    '  toolist weclaw relay [--once] [--weclaw-url <url>] [--interval <seconds>] [--limit <n>] [--relay-id <id>] [--env <prod|test|dev>] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '',
+    'Options:',
+    '  --once         Claim one batch, send, ack, and exit',
+    `  --weclaw-url   Local WeClaw URL (defaults to ${DEFAULT_WECLAW_URL})`,
+    `  --interval     Continuous relay poll interval in seconds (defaults to ${DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS})`,
+    `  --limit        Deliveries to claim per batch (defaults to ${DEFAULT_WECLAW_RELAY_LIMIT})`,
+    '  --relay-id     Relay identity reported to Gateway',
+    ENVIRONMENT_OPTION_HELP,
+    '  --base-url     API base URL for custom environments',
+    '  --token        API access token',
+    '  --config-path  Config file path',
+    '  --json         Emit final JSON summary; progress is written to stderr',
+  ].join('\n') + '\n';
+}
+
+export function getToolsHelp(): string {
+  return [
+    'toolist tools',
+    '',
+    'Usage:',
+    '  toolist tools list',
     '',
     'Commands:',
     '  list    List available tools',
@@ -343,10 +426,10 @@ export function getToolsHelp(): string {
 
 export function getFilesHelp(): string {
   return [
-    'toollist files',
+    'toolist files',
     '',
     'Usage:',
-    '  toollist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]',
+    '  toolist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]',
     '',
     `Defaults to ${DEFAULT_BASE_URL}.`,
     '',
@@ -361,12 +444,12 @@ export function getFilesHelp(): string {
 
 export function getMarkdownHelp(): string {
   return [
-    'toollist markdown',
+    'toolist markdown',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images (--input <path> (--in-place | --output <path>) | --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>)) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toolist markdown upload-images (--input <path> (--in-place | --output <path>) | --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>)) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Commands:',
     '  upload-images  Upload local Markdown images and rewrite them to public URLs',
@@ -375,13 +458,13 @@ export function getMarkdownHelp(): string {
 
 export function getMarkdownUploadImagesHelp(): string {
   return [
-    'toollist markdown upload-images',
+    'toolist markdown upload-images',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
-    '  toollist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toolist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
+    '  toolist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]',
     '',
     'Options:',
     '  --input        Markdown file path for single-file mode',
@@ -404,13 +487,13 @@ export function getMarkdownUploadImagesHelp(): string {
 
 export function getDocumentHelp(): string {
   return [
-    'toollist document',
+    'toolist document',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  docx-to-markdown        Convert a DOCX file into a Markdown bundle through the API',
@@ -420,12 +503,12 @@ export function getDocumentHelp(): string {
 
 export function getDocumentDocxToMarkdownHelp(): string {
   return [
-    'toollist document docx-to-markdown',
+    'toolist document docx-to-markdown',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist document docx-to-markdown --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --input        DOCX file path',
@@ -442,12 +525,12 @@ export function getDocumentDocxToMarkdownHelp(): string {
 
 export function getDocumentDocxToMarkdownBatchHelp(): string {
   return [
-    'toollist document docx-to-markdown-batch',
+    'toolist document docx-to-markdown-batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist document docx-to-markdown-batch --inputs <path...> [--input-glob <pattern>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more DOCX input file paths',
@@ -465,21 +548,21 @@ export function getDocumentDocxToMarkdownBatchHelp(): string {
 
 export function getImageHelp(): string {
   return [
-    'toollist image',
+    'toolist image',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert --input <path> --to <format> [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
-    '  toollist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image convert --input <path> --to <format> [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image remove-watermark --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image resize --input <path> [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image crop --input <path> --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--sync] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  convert  Convert an image format through the API',
@@ -501,12 +584,12 @@ export function getImageHelp(): string {
 
 export function getImageGptImage2Help(): string {
   return [
-    'toollist image gpt-image-2',
+    'toolist image gpt-image-2',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image gpt-image-2 --prompt <text> [--aspect-ratio <ratio>] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --prompt       Text prompt for image generation',
@@ -524,12 +607,12 @@ export function getImageGptImage2Help(): string {
 
 export function getImageRemoveBackgroundHelp(): string {
   return [
-    'toollist image remove-background',
+    'toolist image remove-background',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --input        Image file path',
@@ -546,12 +629,12 @@ export function getImageRemoveBackgroundHelp(): string {
 
 export function getImageConvertBatchHelp(): string {
   return [
-    'toollist image convert-batch',
+    'toolist image convert-batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image convert-batch --inputs <path...> [--input-glob <pattern>] --to <format> [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -573,12 +656,12 @@ export function getImageConvertBatchHelp(): string {
 
 export function getImageResizeBatchHelp(): string {
   return [
-    'toollist image resize-batch',
+    'toolist image resize-batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image resize-batch --inputs <path...> [--input-glob <pattern>] [--width <pixels>] [--height <pixels>] [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -602,12 +685,12 @@ export function getImageResizeBatchHelp(): string {
 
 export function getImageRemoveWatermarkBatchHelp(): string {
   return [
-    'toollist image remove-watermark-batch',
+    'toolist image remove-watermark-batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--threshold <0..1>] [--region <region>] [--fallback-region <region>] [--snap | --no-snap] [--snap-max-size <32..320>] [--snap-threshold <0..1>] [--denoise <ai|ns|telea|soft|off>] [--sigma <1..150>] [--strength <0..300>] [--radius <1..25>] [--force] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image remove-watermark-batch --inputs <path...> [--input-glob <pattern>] [--chunk-size <n>] [--threshold <0..1>] [--region <region>] [--fallback-region <region>] [--snap | --no-snap] [--snap-max-size <32..320>] [--snap-threshold <0..1>] [--denoise <ai|ns|telea|soft|off>] [--sigma <1..150>] [--strength <0..300>] [--radius <1..25>] [--force] [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -638,12 +721,12 @@ export function getImageRemoveWatermarkBatchHelp(): string {
 
 export function getImageCropBatchHelp(): string {
   return [
-    'toollist image crop-batch',
+    'toolist image crop-batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist image crop-batch --inputs <path...> [--input-glob <pattern>] --x <pixels> --y <pixels> --width <pixels> --height <pixels> [--to <format>] [--quality <1-100>] [--compress <preset>] [--concurrency <n>] [--wait] [--output-dir <path>] [--resume] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Options:',
     '  --inputs       One or more input file paths',
@@ -669,13 +752,13 @@ export function getImageCropBatchHelp(): string {
 
 export function getJobsHelp(): string {
   return [
-    'toollist jobs',
+    'toolist jobs',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist jobs get <jobId> [--env <prod|test|dev>]',
-    '  toollist jobs wait <jobId> --timeout 120 [--env <prod|test|dev>]',
+    '  toolist jobs get <jobId> [--env <prod|test|dev>]',
+    '  toolist jobs wait <jobId> --timeout 120 [--env <prod|test|dev>]',
     '',
     'Commands:',
     '  get     Fetch a job by id',
@@ -685,12 +768,12 @@ export function getJobsHelp(): string {
 
 export function getBatchHelp(): string {
   return [
-    'toollist batch',
+    'toolist batch',
     '',
     `Defaults to ${DEFAULT_BASE_URL}. Use --base-url only for non-production targets.`,
     '',
     'Usage:',
-    '  toollist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
+    '  toolist batch run --manifest <path> [--resume] [--concurrency <n>] [--output-dir <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]',
     '',
     'Commands:',
     '  run     Run a manifest-driven batch',
@@ -1055,6 +1138,308 @@ function parseTwitterWatchTrustArgs(args: string[]): {
     }
 
     parsed.watchId = arg;
+  }
+
+  return parsed;
+}
+
+function parseWeClawStatusArgs(args: string[]): {
+  weclawUrl: string;
+} {
+  const parsed = {
+    weclawUrl: DEFAULT_WECLAW_URL,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--weclaw-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.weclawUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  return parsed;
+}
+
+function parseWeClawBindArgs(args: string[]): SharedApiArgs & {
+  code: string;
+  to: string;
+  label?: string;
+} {
+  const parsed: SharedApiArgs & {
+    code?: string;
+    to?: string;
+    label?: string;
+  } = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--code') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.code = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--to') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.to = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--label') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.label = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
+  }
+
+  const { code, to } = parsed;
+
+  if (!code) {
+    missingRequiredOption('--code');
+  }
+
+  if (!to) {
+    missingRequiredOption('--to');
+  }
+
+  return {
+    ...parsed,
+    code,
+    to,
+  };
+}
+
+function parseWeClawRelayArgs(args: string[]): SharedApiArgs & {
+  weclawUrl: string;
+  once: boolean;
+  intervalSeconds: number;
+  limit: number;
+  relayId?: string;
+} {
+  const parsed: SharedApiArgs & {
+    weclawUrl: string;
+    once: boolean;
+    intervalSeconds: number;
+    limit: number;
+    relayId?: string;
+  } = {
+    weclawUrl: DEFAULT_WECLAW_URL,
+    once: false,
+    intervalSeconds: DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS,
+    limit: DEFAULT_WECLAW_RELAY_LIMIT,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    const { flag, value, rawValue, consumeNext } = parseOption(arg, args, index);
+
+    if (flag === '--base-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.baseUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--env') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.env = resolveEnvironmentName(value);
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--token') {
+      if (!value && !isExplicitEmptyOption(rawValue)) {
+        missingOptionValue(flag);
+      }
+      if (value) {
+        parsed.token = value;
+      }
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--config-path') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.configPath = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--weclaw-url') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.weclawUrl = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--once') {
+      parsed.once = true;
+      continue;
+    }
+
+    if (flag === '--interval') {
+      const parsedInterval = parseIntegerRangeOption(flag, rawValue, args, index, 1, 3600);
+      parsed.intervalSeconds = parsedInterval.value;
+      if (consumeNext || parsedInterval.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--limit') {
+      const parsedLimit = parseIntegerRangeOption(flag, rawValue, args, index, 1, 100);
+      parsed.limit = parsedLimit.value;
+      if (consumeNext || parsedLimit.consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--relay-id') {
+      if (!value) {
+        missingOptionValue(flag);
+      }
+      parsed.relayId = value;
+      if (consumeNext) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (flag === '--json') {
+      continue;
+    }
+
+    if (flag.startsWith('-')) {
+      unknownOption(flag);
+    }
+
+    unexpectedPositional(arg);
   }
 
   return parsed;
@@ -3716,6 +4101,109 @@ export async function main(argv: string[] = process.argv.slice(2), io: CliIO = d
         } catch (error) {
           io.stderr(`${error instanceof Error ? error.message : 'Twitter watch trust failed.'}\n`);
           return 1;
+        }
+      }
+    }
+  }
+
+  if (command === 'weclaw') {
+    const [subcommand, ...commandArgs] = rest;
+
+    if (!subcommand || subcommand === '--help' || subcommand === '-h' || subcommand === 'help') {
+      io.stdout(getWeClawHelp());
+      return 0;
+    }
+
+    if (subcommand === 'status') {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        io.stdout(getWeClawStatusHelp());
+        return 0;
+      }
+
+      try {
+        const parsed = parseWeClawStatusArgs(commandArgs);
+        const result = await weclawStatusCommand({
+          weclawUrl: parsed.weclawUrl,
+        });
+
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'WeClaw status failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'bind') {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        io.stdout(getWeClawBindHelp());
+        return 0;
+      }
+
+      try {
+        const parsed = parseWeClawBindArgs(commandArgs);
+        const credentials = await resolveApiCredentials(parsed);
+        const result = await weclawBindCommand(retryArgs({
+          ...credentials,
+          code: parsed.code,
+          to: parsed.to,
+          label: parsed.label,
+          configPath: parsed.configPath,
+        }));
+
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'WeClaw bind failed.'}\n`);
+        return 1;
+      }
+    }
+
+    if (subcommand === 'relay') {
+      if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+        io.stdout(getWeClawRelayHelp());
+        return 0;
+      }
+
+      const abortController = new AbortController();
+      const abortRelay = () => {
+        abortController.abort();
+      };
+      let listenersAttached = false;
+
+      try {
+        const parsed = parseWeClawRelayArgs(commandArgs);
+        const credentials = await resolveApiCredentials(parsed);
+
+        if (!parsed.once) {
+          process.once('SIGINT', abortRelay);
+          process.once('SIGTERM', abortRelay);
+          listenersAttached = true;
+        }
+
+        const result = await weclawRelayCommand(retryArgs({
+          ...credentials,
+          weclawUrl: parsed.weclawUrl,
+          once: parsed.once,
+          limit: parsed.limit,
+          intervalSeconds: parsed.intervalSeconds,
+          relayId: parsed.relayId,
+          stopSignal: abortController.signal,
+        }), {
+          progress: (message) => {
+            io.stderr(`${message}\n`);
+          },
+        });
+
+        io.stdout(`${JSON.stringify(result)}\n`);
+        return 0;
+      } catch (error) {
+        io.stderr(`${error instanceof Error ? error.message : 'WeClaw relay failed.'}\n`);
+        return 1;
+      } finally {
+        if (listenersAttached) {
+          process.removeListener('SIGINT', abortRelay);
+          process.removeListener('SIGTERM', abortRelay);
         }
       }
     }

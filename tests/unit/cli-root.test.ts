@@ -26,8 +26,13 @@ describe('root command', () => {
     const result = await runCli(['--help']);
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('toolist - agent-first CLI for the Toollist platform');
     expect(result.stdout).toContain('Default API base URL: https://tooli.st');
-    expect(result.stdout).toContain('toollist tools list');
+    expect(result.stdout).toContain('toolist <command> [options]');
+    expect(result.stdout).toContain('toolist tools list');
+    expect(result.stdout).toContain('toolist weclaw status');
+    expect(result.stdout).not.toContain('toollist tools list');
+    expect(result.stdout).not.toContain('toollist weclaw status');
     expect(result.stdout).toContain('login');
     expect(result.stdout).toContain('tools');
   });
@@ -44,5 +49,32 @@ describe('root command', () => {
     ).toBe(true);
 
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('uses the package binary spelling across top-level help surfaces', async () => {
+    const helpCommands = [
+      ['--help'],
+      ['tools', '--help'],
+      ['twitter', '--help'],
+      ['twitter', 'watch', '--help'],
+      ['files', '--help'],
+      ['markdown', '--help'],
+      ['document', '--help'],
+      ['image', '--help'],
+      ['jobs', '--help'],
+      ['batch', '--help'],
+      ['weclaw', '--help'],
+      ['weclaw', 'status', '--help'],
+      ['weclaw', 'bind', '--help'],
+      ['weclaw', 'relay', '--help'],
+    ];
+
+    for (const args of helpCommands) {
+      const result = await runCli(args);
+
+      expect(result.exitCode, `${args.join(' ')} help should exit successfully`).toBe(0);
+      expect(result.stdout, `${args.join(' ')} help should use toolist spelling`).not.toContain('toollist ');
+      expect(result.stdout, `${args.join(' ')} help should mention toolist`).toContain('toolist');
+    }
   });
 });

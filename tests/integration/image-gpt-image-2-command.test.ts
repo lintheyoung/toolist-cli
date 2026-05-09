@@ -35,12 +35,12 @@ describe('image gpt-image-2 command', () => {
     const commandHelp = await runCli(['image', 'gpt-image-2', '--help']);
 
     expect(rootHelp.exitCode).toBe(0);
-    expect(rootHelp.stdout).toContain('toollist image gpt-image-2');
+    expect(rootHelp.stdout).toContain('toolist image gpt-image-2');
     expect(imageHelp.exitCode).toBe(0);
-    expect(imageHelp.stdout).toContain('toollist image gpt-image-2 --prompt <text>');
+    expect(imageHelp.stdout).toContain('toolist image gpt-image-2 --prompt <text>');
     expect(imageHelp.stdout).toContain('gpt-image-2  Generate an image with Kie GPT Image 2 through the API');
     expect(commandHelp.exitCode).toBe(0);
-    expect(commandHelp.stdout).toContain('toollist image gpt-image-2');
+    expect(commandHelp.stdout).toContain('toolist image gpt-image-2');
     expect(commandHelp.stdout).toContain('--prompt       Text prompt for image generation');
     expect(commandHelp.stdout).toContain('--aspect-ratio Aspect ratio, for example auto, 1:1, 16:9, or 9:16');
   });

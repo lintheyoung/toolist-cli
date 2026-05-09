@@ -1,10 +1,10 @@
-toollist markdown upload-images
+toolist markdown upload-images
 
 Defaults to https://tooli.st. Use --base-url only for non-production targets.
 
 Usage:
-  toollist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]
-  toollist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]
+  toolist markdown upload-images --input <path> (--in-place | --output <path>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]
+  toolist markdown upload-images --root <dir> [--glob <pattern>] (--in-place | --output-dir <dir>) --public [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json] [--report <path>] [--dry-run] [--skip-missing]
 
 Options:
   --input        Markdown file path for single-file mode
