@@ -34,7 +34,7 @@ describe('document docx-to-markdown command', () => {
     const result = await runCli(['document', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist document');
+    expect(result.stdout).toContain('toolist document');
     expect(result.stdout).toContain('docx-to-markdown');
     expect(result.stdout).toContain('docx-to-markdown-batch');
   });
@@ -43,7 +43,7 @@ describe('document docx-to-markdown command', () => {
     const result = await runCli(['document', 'docx-to-markdown-batch', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist document docx-to-markdown-batch');
+    expect(result.stdout).toContain('toolist document docx-to-markdown-batch');
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--output <path>');

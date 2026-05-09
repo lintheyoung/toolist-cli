@@ -31,7 +31,7 @@ describe('image crop-batch command', () => {
     const result = await runCli(['image', 'crop-batch', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image crop-batch');
+    expect(result.stdout).toContain('toolist image crop-batch');
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--x <pixels>');

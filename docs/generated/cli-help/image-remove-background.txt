@@ -1,9 +1,9 @@
-toollist image remove-background
+toolist image remove-background
 
 Defaults to https://tooli.st. Use --base-url only for non-production targets.
 
 Usage:
-  toollist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
+  toolist image remove-background --input <path> [--wait] [--timeout <seconds>] [--output <path>] [--base-url <url>] [--env <prod|test|dev>] [--token <token>] [--config-path <path>] [--json]
 
 Options:
   --input        Image file path

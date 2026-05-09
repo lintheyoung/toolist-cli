@@ -125,7 +125,7 @@ describe('image remove-watermark-batch command', () => {
     const result = await runCli(['image', 'remove-watermark-batch', '--help']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('toollist image remove-watermark-batch');
+    expect(result.stdout).toContain('toolist image remove-watermark-batch');
     expect(result.stdout).toContain('--inputs <path...>');
     expect(result.stdout).toContain('--input-glob <pattern>');
     expect(result.stdout).toContain('--chunk-size <n>');

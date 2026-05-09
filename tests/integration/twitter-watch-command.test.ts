@@ -36,7 +36,7 @@ describe('twitter watch command', () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(stdout).toContain('toollist twitter watch');
+    expect(stdout).toContain('toolist twitter watch');
     expect(stdout).toContain('poll');
     expect(stdout).toContain('trust');
   });

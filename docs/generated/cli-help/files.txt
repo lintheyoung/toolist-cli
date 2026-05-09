@@ -1,7 +1,7 @@
-toollist files
+toolist files
 
 Usage:
-  toollist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]
+  toolist files upload --input <path> [--sha256] [--public] [--env <prod|test|dev>]
 
 Defaults to https://tooli.st.
 

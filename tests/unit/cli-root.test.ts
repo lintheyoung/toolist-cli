@@ -50,4 +50,31 @@ describe('root command', () => {
 
     await rm(tempDir, { recursive: true, force: true });
   });
+
+  it('uses the package binary spelling across top-level help surfaces', async () => {
+    const helpCommands = [
+      ['--help'],
+      ['tools', '--help'],
+      ['twitter', '--help'],
+      ['twitter', 'watch', '--help'],
+      ['files', '--help'],
+      ['markdown', '--help'],
+      ['document', '--help'],
+      ['image', '--help'],
+      ['jobs', '--help'],
+      ['batch', '--help'],
+      ['weclaw', '--help'],
+      ['weclaw', 'status', '--help'],
+      ['weclaw', 'bind', '--help'],
+      ['weclaw', 'relay', '--help'],
+    ];
+
+    for (const args of helpCommands) {
+      const result = await runCli(args);
+
+      expect(result.exitCode, `${args.join(' ')} help should exit successfully`).toBe(0);
+      expect(result.stdout, `${args.join(' ')} help should use toolist spelling`).not.toContain('toollist ');
+      expect(result.stdout, `${args.join(' ')} help should mention toolist`).toContain('toolist');
+    }
+  });
 });

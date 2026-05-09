@@ -53,7 +53,7 @@ function getRequiredProfile(
   profile: ToollistProfile | null,
 ): ToollistProfile {
   if (!profile?.accessToken) {
-    throw new Error('No saved login found. Run `toollist login` first.');
+    throw new Error('No saved login found. Run `toolist login` first.');
   }
 
   return profile;

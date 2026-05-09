@@ -216,6 +216,82 @@ describe('weclaw command', () => {
     }));
   });
 
+  it('rejects bind when the pairing code is missing before calling the command', async () => {
+    const weclawBindCommand = vi.fn();
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({ weclawRelayCommand: vi.fn() }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'bind',
+      '--to',
+      'wx_target@im.wechat',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toBe('Missing required option: --code\n');
+    expect(weclawBindCommand).not.toHaveBeenCalled();
+  });
+
+  it('rejects bind when the target user is missing before calling the command', async () => {
+    const weclawBindCommand = vi.fn();
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({ weclawRelayCommand: vi.fn() }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'bind',
+      '--code',
+      'wc_code_123',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toBe('Missing required option: --to\n');
+    expect(weclawBindCommand).not.toHaveBeenCalled();
+  });
+
   it('posts the binding completion body to Gateway', async () => {
     const apiRequest = vi.fn(async () => ({
       data: {
@@ -592,5 +668,128 @@ describe('weclaw command', () => {
       cycles: 0,
       cycleFailures: 1,
     }));
+  });
+
+  it('wires and removes process signal handlers for continuous relay CLI runs', async () => {
+    const weclawRelayCommand = vi.fn(async () => ({
+      ok: true,
+      once: false,
+      relayId: 'test-relay',
+      weclawUrl: 'http://127.0.0.1:18011',
+      claimed: 0,
+      sent: 0,
+      failed: 0,
+      cycleFailures: 0,
+      cycles: 1,
+      deliveries: [],
+    }));
+    const onceSpy = vi.spyOn(process, 'once');
+    const removeListenerSpy = vi.spyOn(process, 'removeListener');
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({
+      DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS: 10,
+      DEFAULT_WECLAW_RELAY_LIMIT: 10,
+      weclawRelayCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'relay',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    const relayArgs = weclawRelayCommand.mock.calls[0]?.[0];
+    const sigintHandler = onceSpy.mock.calls.find(([event]) => event === 'SIGINT')?.[1];
+    const sigtermHandler = onceSpy.mock.calls.find(([event]) => event === 'SIGTERM')?.[1];
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe('');
+    expect(JSON.parse(stdout)).toEqual(expect.objectContaining({
+      ok: true,
+      once: false,
+    }));
+    expect(relayArgs).toEqual(expect.objectContaining({
+      baseUrl: 'https://test.tooli.st',
+      token: 'tgc_test',
+      once: false,
+    }));
+    expect(relayArgs?.stopSignal).toBeInstanceOf(AbortSignal);
+    expect(sigintHandler).toEqual(expect.any(Function));
+    expect(sigtermHandler).toEqual(expect.any(Function));
+    expect(removeListenerSpy).toHaveBeenCalledWith('SIGINT', sigintHandler);
+    expect(removeListenerSpy).toHaveBeenCalledWith('SIGTERM', sigtermHandler);
+  });
+
+  it('removes process signal handlers when continuous relay CLI runs fail', async () => {
+    const weclawRelayCommand = vi.fn(async () => {
+      throw new Error('relay unavailable');
+    });
+    const onceSpy = vi.spyOn(process, 'once');
+    const removeListenerSpy = vi.spyOn(process, 'removeListener');
+
+    vi.doMock('../../src/commands/weclaw/status.js', () => ({ weclawStatusCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/bind.js', () => ({ weclawBindCommand: vi.fn() }));
+    vi.doMock('../../src/commands/weclaw/relay.js', () => ({
+      DEFAULT_WECLAW_RELAY_INTERVAL_SECONDS: 10,
+      DEFAULT_WECLAW_RELAY_LIMIT: 10,
+      weclawRelayCommand,
+    }));
+
+    const { main } = await import('../../src/cli.js');
+
+    let stdout = '';
+    let stderr = '';
+    const exitCode = await main([
+      'weclaw',
+      'relay',
+      '--env',
+      'test',
+      '--token',
+      'tgc_test',
+      '--config-path',
+      '/tmp/toollist-missing-config.json',
+      '--json',
+    ], {
+      stdout: (chunk) => {
+        stdout += chunk;
+      },
+      stderr: (chunk) => {
+        stderr += chunk;
+      },
+    });
+
+    const sigintHandler = onceSpy.mock.calls.find(([event]) => event === 'SIGINT')?.[1];
+    const sigtermHandler = onceSpy.mock.calls.find(([event]) => event === 'SIGTERM')?.[1];
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toBe('relay unavailable\n');
+    expect(weclawRelayCommand).toHaveBeenCalledWith(expect.objectContaining({
+      once: false,
+      stopSignal: expect.any(AbortSignal),
+    }), expect.any(Object));
+    expect(sigintHandler).toEqual(expect.any(Function));
+    expect(sigtermHandler).toEqual(expect.any(Function));
+    expect(removeListenerSpy).toHaveBeenCalledWith('SIGINT', sigintHandler);
+    expect(removeListenerSpy).toHaveBeenCalledWith('SIGTERM', sigtermHandler);
   });
 });
